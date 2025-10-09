@@ -1,6 +1,7 @@
 # Project Roles & Responsibilities
 
 ## 1) PM / Taskmaster - Rohan
+### Co-Lead: Takumi
 **Mission:** Keep the sprint on rails and the team unblocked; ensure deliverables match mentor expectations.
 
 **Responsibilities**
@@ -17,6 +18,7 @@
 ---
 
 ## 2) Platform & AI Engineering Lead - Moumit
+### Co-Lead: Akash
 **Mission:** Build/stabilize the agent/orchestrator layer and shared engineering foundations.
 
 **Responsibilities**
@@ -33,6 +35,7 @@
 ---
 
 ## 3) Biology & Competitive Intelligence Lead - Akash
+### Co-Lead: Moumit
 **Mission:** Decide what to track and how to judge usefulness; translate domain needs into questions, fields, and evaluation.
 
 **Responsibilities**
@@ -49,6 +52,7 @@
 ---
 
 ## 4) Data & Servers Lead - Takumi
+### Co-Lead: Rohan
 **Mission:** Make the data flow—pick practical public sources and wrap them behind clean, reliable MCP servers/adapters.
 
 **Responsibilities**
