@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pubchem": {
+      "transport": "stdio",
+      "command": "node",
+      "args": ["servers/pubchem/index.js"]
+    }
+  }
+}

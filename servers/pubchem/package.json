@@ -1,0 +1,14 @@
+{
+  "name": "pubchem-mcp-server-local",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Minimal PubChem MCP server (stdio) for Claude Code demos",
+  "main": "index.js",
+  "scripts": {
+    "start": "node servers/pubchem/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  }
+}

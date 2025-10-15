@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx:*)",
+      "Bash(npm search:*)",
+      "Bash(npm install:*)",
+      "Bash(npm view:*)",
+      "Bash(node:*)",
+      "Bash(timeout:*)",
+      "Bash(exit 0)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
