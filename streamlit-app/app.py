@@ -70,7 +70,7 @@ def main():
     """Main Streamlit application."""
 
     # Header
-    st.title("🧪 MCP Agent - Chemical Compound Query")
+    st.title("Team 2 MCP Agent - Chemical Compound Query Prototype")
     st.markdown(
         """
         This application uses a LangChain agent powered by **Ollama** to query
