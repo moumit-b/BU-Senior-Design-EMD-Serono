@@ -26,9 +26,10 @@ class MCPToolWrapper:
         """
         self.server_config = server_config
         self.session: Optional[ClientSession] = None
-        self.read = None
-        self.write = None
-        self._tools_cache: List[Dict] = []
+        self.read_stream = None
+        self.write_stream = None
+        self._tools_cache: List[Any] = []
+        self._context_manager = None
 
     async def connect(self):
         """Establish connection to the MCP server."""
@@ -37,12 +38,15 @@ class MCPToolWrapper:
             args=self.server_config["args"]
         )
 
-        # Create stdio client connection
-        stdio = await stdio_client(server_params)
-        self.read, self.write = stdio
+        # Create stdio client connection using async context manager
+        self._context_manager = stdio_client(server_params)
+        self.read_stream, self.write_stream = await self._context_manager.__aenter__()
 
         # Initialize session
-        self.session = ClientSession(self.read, self.write)
+        self.session = ClientSession(self.read_stream, self.write_stream)
+        await self.session.__aenter__()
+
+        # Initialize the session
         await self.session.initialize()
 
         # Fetch available tools
@@ -53,6 +57,9 @@ class MCPToolWrapper:
         """Close the MCP server connection."""
         if self.session:
             await self.session.__aexit__(None, None, None)
+
+        if self._context_manager:
+            await self._context_manager.__aexit__(None, None, None)
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """
@@ -70,7 +77,19 @@ class MCPToolWrapper:
 
         try:
             result = await self.session.call_tool(tool_name, arguments)
-            return json.dumps(result.content, indent=2)
+            # Extract text content from result
+            if hasattr(result, 'content') and result.content:
+                # Handle list of content items
+                if isinstance(result.content, list):
+                    text_parts = []
+                    for item in result.content:
+                        if hasattr(item, 'text'):
+                            text_parts.append(item.text)
+                        elif isinstance(item, dict) and 'text' in item:
+                            text_parts.append(item['text'])
+                    return '\n'.join(text_parts) if text_parts else str(result.content)
+                return str(result.content)
+            return json.dumps(result, default=str, indent=2)
         except Exception as e:
             return f"Error calling tool {tool_name}: {str(e)}"
 
@@ -87,8 +106,8 @@ class MCPToolWrapper:
             tool_name = mcp_tool.name
             tool_description = mcp_tool.description or "No description available"
 
-            # Create a closure to capture the tool_name
-            def make_tool_func(name: str):
+            # Create a closure to capture the tool_name and self
+            def make_tool_func(name: str, wrapper_instance):
                 def tool_func(arguments: str) -> str:
                     """Execute the MCP tool."""
                     try:
@@ -98,19 +117,32 @@ class MCPToolWrapper:
                         else:
                             args_dict = arguments
                     except json.JSONDecodeError:
+                        # Try to extract simple key-value
                         args_dict = {"query": arguments}
 
                     # Run the async call in the event loop
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    result = loop.run_until_complete(self.call_tool(name, args_dict))
-                    loop.close()
-                    return result
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Create a new event loop in a thread
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(
+                                    lambda: asyncio.run(wrapper_instance.call_tool(name, args_dict))
+                                )
+                                result = future.result(timeout=30)
+                                return result
+                        else:
+                            result = loop.run_until_complete(wrapper_instance.call_tool(name, args_dict))
+                            return result
+                    except Exception as e:
+                        return f"Error executing tool: {str(e)}"
+
                 return tool_func
 
             langchain_tool = Tool(
                 name=tool_name,
-                func=make_tool_func(tool_name),
+                func=make_tool_func(tool_name, self),
                 description=tool_description
             )
             langchain_tools.append(langchain_tool)
@@ -141,5 +173,7 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
             print(f"✓ Connected to {server_name}, loaded {len(tools)} tools")
         except Exception as e:
             print(f"✗ Failed to connect to {server_name}: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     return all_tools
