@@ -6,7 +6,10 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from langchain.tools import Tool
+try:
+    from langchain_core.tools import Tool
+except ImportError:
+    from langchain.tools import Tool
 from pydantic import BaseModel, Field
 import json
 

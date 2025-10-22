@@ -3,10 +3,16 @@ Agent module - Sets up the LangChain agent with Ollama and MCP tools.
 """
 
 from typing import List, Optional
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain.tools import Tool
+try:
+    from langchain.agents import AgentExecutor, create_react_agent
+except ImportError:
+    # For LangChain 1.0+
+    from langchain.agents import AgentExecutor
+    from langchain import hub
+
+from langchain_core.tools import Tool
 from langchain_ollama import OllamaLLM
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from config import OLLAMA_BASE_URL, OLLAMA_MODEL, AGENT_MAX_ITERATIONS, AGENT_VERBOSE
 
 
@@ -72,14 +78,30 @@ class MCPAgent:
             }
         )
 
-        # Create the ReAct agent
-        agent = create_react_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=prompt
-        )
+        # Try to create the ReAct agent with new or old API
+        try:
+            # LangChain < 1.0
+            from langchain.agents import create_react_agent
+            agent = create_react_agent(
+                llm=self.llm,
+                tools=self.tools,
+                prompt=prompt
+            )
+        except (ImportError, TypeError):
+            # LangChain 1.0+ - use initialize_agent instead
+            from langchain.agents import initialize_agent, AgentType
+            self.agent_executor = initialize_agent(
+                tools=self.tools,
+                llm=self.llm,
+                agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+                verbose=AGENT_VERBOSE,
+                max_iterations=AGENT_MAX_ITERATIONS,
+                handle_parsing_errors=True,
+                return_intermediate_steps=True
+            )
+            return
 
-        # Create agent executor
+        # Create agent executor (for old API)
         self.agent_executor = AgentExecutor(
             agent=agent,
             tools=self.tools,

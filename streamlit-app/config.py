@@ -10,7 +10,7 @@ OLLAMA_MODEL = "llama3.2"  # Change this to your preferred Ollama model
 MCP_SERVERS = {
     "pubchem": {
         "command": "node",
-        "args": ["../servers/pubchem/build/index.js"],
+        "args": ["../servers/pubchem/index.js"],
         "description": "PubChem MCP server for chemical compound data"
     }
     # Add more MCP servers here in the future
