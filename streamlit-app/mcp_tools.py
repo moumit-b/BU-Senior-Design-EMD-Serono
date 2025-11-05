@@ -120,20 +120,14 @@ class MCPToolWrapper:
                         # Try to extract simple key-value
                         args_dict = {"query": arguments}
 
-                    # Run the async call in the event loop
+                    # Run the async call - always use a new event loop in a thread for Streamlit
                     try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            # Create a new event loop in a thread
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                future = executor.submit(
-                                    lambda: asyncio.run(wrapper_instance.call_tool(name, args_dict))
-                                )
-                                result = future.result(timeout=30)
-                                return result
-                        else:
-                            result = loop.run_until_complete(wrapper_instance.call_tool(name, args_dict))
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(
+                                lambda: asyncio.run(wrapper_instance.call_tool(name, args_dict))
+                            )
+                            result = future.result(timeout=60)
                             return result
                     except Exception as e:
                         return f"Error executing tool: {str(e)}"
@@ -173,7 +167,13 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
             print(f"✓ Connected to {server_name}, loaded {len(tools)} tools")
         except Exception as e:
             print(f"✗ Failed to connect to {server_name}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            # Try to clean up any partially initialized connections
+            try:
+                await wrapper.disconnect()
+            except:
+                pass  # Ignore cleanup errors
+            # Don't print full traceback for cleaner output
+            # import traceback
+            # traceback.print_exc()
 
     return all_tools
