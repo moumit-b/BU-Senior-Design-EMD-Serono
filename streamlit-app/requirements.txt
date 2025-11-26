@@ -8,6 +8,9 @@ langchain-community>=0.0.20
 # Ollama integration for LangChain
 langchain-ollama>=0.1.0
 
+# LangGraph for agent orchestration (dual orchestration system)
+langgraph>=0.2.0
+
 # MCP SDK for connecting to MCP servers
 mcp>=0.9.0
 
@@ -20,3 +23,6 @@ httpx>=0.25.0
 # Additional utilities
 python-dotenv>=1.0.0
 pydantic>=2.0.0
+
+# Optional: For enhanced caching (Redis-based)
+# redis>=5.0.0

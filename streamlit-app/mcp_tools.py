@@ -91,7 +91,9 @@ class MCPToolWrapper:
                 return str(result.content)
             return json.dumps(result, default=str, indent=2)
         except Exception as e:
-            return f"Error calling tool {tool_name}: {str(e)}"
+            import traceback
+            error_detail = f"{type(e).__name__}: {str(e)}\nTraceback:\n{traceback.format_exc()}"
+            return f"Error calling tool {tool_name}: {error_detail}"
 
     def get_langchain_tools(self) -> List[Tool]:
         """

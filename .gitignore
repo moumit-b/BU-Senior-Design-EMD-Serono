@@ -1,0 +1,32 @@
+# Progress tracking (internal use only)
+progress/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+
+# Streamlit
+.streamlit/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Results and outputs
+results/
+*.log
+
+# MCP old backup
+streamlit-app/mcp_old_backup/
