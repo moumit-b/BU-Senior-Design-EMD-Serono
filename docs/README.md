@@ -23,13 +23,8 @@ Essential documentation for the Dual Orchestration System.
 
 **First Time Setup:**
 1. Follow [INSTALLATION.md](INSTALLATION.md) to set up the system
-2. Use [DEMO_QUICKSTART.md](DEMO_QUICKSTART.md) for your first demo
+2. Use [DEMO_QUICKSTART.md](DEMO_QUICKSTART.md) for first demo
 3. Read [DUAL_ORCHESTRATION_README.md](DUAL_ORCHESTRATION_README.md) for feature overview
-
-**For Presentations:**
-- Run demo using [DEMO_QUICKSTART.md](DEMO_QUICKSTART.md)
-- Explain architecture with [DUAL_ORCHESTRATION_ARCHITECTURE.md](DUAL_ORCHESTRATION_ARCHITECTURE.md)
-- Show multi-agent system via [DUAL_ORCHESTRATION_IMPLEMENTATION.md](DUAL_ORCHESTRATION_IMPLEMENTATION.md)
 
 **For Development:**
 - Technical design: [DUAL_ORCHESTRATION_ARCHITECTURE.md](DUAL_ORCHESTRATION_ARCHITECTURE.md)
