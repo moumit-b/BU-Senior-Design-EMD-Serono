@@ -1,5 +1,6 @@
 # Progress tracking (internal use only)
 progress/
+AssignmentDocs/
 
 # Python
 __pycache__/
@@ -10,6 +11,10 @@ __pycache__/
 venv/
 ENV/
 env/
+
+# Environment variables (contains API keys and secrets)
+.env
+*.env
 
 # Streamlit
 .streamlit/

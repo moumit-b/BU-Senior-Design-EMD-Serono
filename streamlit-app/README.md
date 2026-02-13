@@ -1,591 +1,352 @@
-# Streamlit MCP Agent - Chemical Compound Query Tool
+# Pharmaceutical Research Intelligence System
 
-A prototype Streamlit application that demonstrates AI agent architecture using Ollama (local LLM) to query MCP (Model Context Protocol) servers for chemical compound information from PubChem.
+A multi-agent orchestration system powered by **Claude Sonnet 4.5** for pharmaceutical research. Uses LangChain, LangGraph, and MCP (Model Context Protocol) servers to coordinate five specialized AI agents for chemistry, clinical trials, literature, genetics, and data analysis.
 
-## Features
+---
 
-- **Custom ReAct-Style Agent**: Implements reasoning and action loop for intelligent tool use
-- **Local LLM with Ollama**: Runs completely locally using Llama 3.2 - no API keys required
-- **MCP Server Integration**: Connects to MCP servers via stdio protocol (currently PubChem)
-- **Interactive Chat Interface**: User-friendly Streamlit UI for natural language queries
-- **Reasoning Transparency**: View the agent's thought process and tool execution steps
-- **Extensible Architecture**: Easy to add new MCP servers and tools
-
-## Architecture
+## Architecture Overview
 
 ```
-┌─────────────────────────────────┐
-│      Streamlit Web UI           │  ← User Interface
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│   Custom ReAct Agent (Python)   │  ← Reasoning Loop
-│   - Prompt Engineering          │
-│   - Action Parsing              │
-│   - Tool Orchestration          │
-└────────────┬────────────────────┘
-             │
-             ├──────────────────────┐
-             ▼                      ▼
-┌──────────────────────┐  ┌─────────────────────┐
-│   Ollama LLM         │  │  MCP Tool Wrapper   │  ← Async Tool Manager
-│   (llama3.2)         │  │  (Python)           │
-│   Local Inference    │  └──────────┬──────────┘
-└──────────────────────┘             │
-                                     ▼
-                          ┌─────────────────────┐
-                          │  PubChem MCP Server │  ← Node.js Process
-                          │  (stdio protocol)   │
-                          └──────────┬──────────┘
-                                     │
-                                     ▼
-                          ┌─────────────────────┐
-                          │  PubChem REST API   │  ← External Data Source
-                          │  (ncbi.nlm.nih.gov) │
-                          └─────────────────────┘
+User Query
+    |
+    v
+Streamlit UI (app.py)
+    |
+    v
+LangGraph Orchestrator (orchestrator_agent.py)
+    |--- analyze_query -> extract keywords, determine complexity
+    |--- create_plan   -> parallel vs sequential strategy
+    |--- assign_agents -> select best agents by confidence score
+    |--- execute_tasks -> run agent processes
+    |--- synthesize    -> Claude combines all results
+    |--- validate      -> governance compliance check
+    |
+    +---> ChemicalAgent   (PubChem, ChEMBL, BioMCP)
+    +---> ClinicalAgent   (BioMCP, OpenFDA)
+    +---> LiteratureAgent (BioMCP, Semantic Scholar)
+    +---> GeneAgent       (BioMCP, MyGene, MyVariant)
+    +---> DataAgent       (Jupyter, DuckDB)
 ```
 
-## Tech Stack
+All agents and the orchestrator use **Claude Sonnet 4.5** (`claude-sonnet-4-5-20250514`) as their LLM via a centralized factory (`utils/llm_factory.py`).
 
-### Frontend & Application
-- **Streamlit** (1.32.0+) - Web UI framework for Python
-- **Python** (3.11.9+) - Core application language
-
-### AI & Agent Framework
-- **Ollama** (0.12.6) - Local LLM runtime
-- **Llama 3.2** (2.0 GB model) - Language model for agent reasoning
-- **Custom ReAct Agent** - Hand-built agent implementation (no LangChain agent dependencies)
-
-### Integration Layer
-- **LangChain Core** (1.0.1) - Tool abstractions only
-- **LangChain Ollama** (0.1.0+) - Ollama LLM integration
-- **MCP SDK (Python)** (0.9.0) - MCP client implementation
-
-### MCP Server
-- **Node.js** (v20.16.0) - Server runtime
-- **@modelcontextprotocol/sdk** (1.20.0) - MCP server framework
-- **Stdio Transport** - Process communication protocol
-
-### External APIs
-- **PubChem PUG REST API** - Chemical compound database
-
-## Available Tools
-
-The PubChem MCP server provides two tools:
-
-### 1. `search_compounds_by_name`
-Search for chemical compounds by name and retrieve their PubChem CIDs (Compound IDs).
-
-**Parameters:**
-- `name` (string, required) - Compound name (e.g., "caffeine")
-- `max_results` (number, optional) - Maximum results to return (default: 5)
-
-**Returns:** List of CIDs and metadata
-
-### 2. `get_compound_properties`
-Retrieve detailed properties for a specific compound by CID.
-
-**Parameters:**
-- `cid` (number, required) - PubChem Compound ID
-
-**Returns:** JSON with:
-- `MolecularFormula` - Chemical formula
-- `MolecularWeight` - Molecular weight in g/mol
-- `IUPACName` - IUPAC systematic name
-- `IsomericSMILES` - SMILES notation
-- `InChI` - InChI identifier
-- `InChIKey` - InChI hash key
-- `Link` - PubChem compound page URL
+---
 
 ## Prerequisites
 
-### 1. Python Environment
-- **Python 3.9+** required (tested on Python 3.11.9)
+- **Python 3.10+**
+- **Node.js 18+** (for MCP servers)
+- **Anthropic API Key** with Claude Sonnet 4.5 access - get one at [console.anthropic.com](https://console.anthropic.com/)
 
-### 2. Node.js (for PubChem MCP Server)
-- **Node.js v16+** required (tested on v20.16.0)
+---
 
-**Verify installation:**
+## Step-by-Step Setup
+
+### 1. Clone the Repository
+
 ```bash
-node --version
-npm --version
+git clone <repository-url>
+cd BU-Senior-Design-EMD-Serono/streamlit-app
 ```
 
-### 3. Ollama Setup
+### 2. Create a Virtual Environment
 
-**Install Ollama:**
-1. Download from: https://ollama.com/download
-2. Follow installation instructions for your OS
-3. **Important (Windows):** After installation, you may need to:
-   - Restart your PowerShell/terminal to pick up PATH changes, OR
-   - Use this command to refresh PATH in current session:
-     ```powershell
-     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-     ```
-
-**Pull the Llama 3.2 model:**
-```bash
-ollama pull llama3.2
-```
-
-**Verify model is installed:**
-```bash
-ollama list
-# Should show: llama3.2:latest
-```
-
-**Note:** Ollama server usually auto-starts after installation. If needed, manually start with:
-```bash
-ollama serve
-```
-
-## Installation
-
-### Step 1: Clone and Navigate
-```bash
-cd streamlit-app
-```
-
-### Step 2: Create Python Virtual Environment
-```bash
-# Create virtual environment
+**Windows:**
+```cmd
 python -m venv venv
-
-# Activate on Windows:
 venv\Scripts\activate
+```
 
-# Activate on macOS/Linux:
+**macOS/Linux:**
+```bash
+python3 -m venv venv
 source venv/bin/activate
 ```
 
-### Step 3: Install Python Dependencies
+### 3. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 This installs:
-- `streamlit>=1.32.0` - Web UI framework
-- `langchain>=1.0.0` - Tool abstractions (core only)
-- `langchain-community>=0.0.20` - Community integrations
-- `langchain-ollama>=0.1.0` - Ollama LLM wrapper
-- `mcp>=0.9.0` - MCP SDK for Python
-- `httpx>=0.25.0` - HTTP client for MCP
-- `python-dotenv>=1.0.0` - Environment variable management
-- `pydantic>=2.0.0` - Data validation
+- `streamlit` - Web UI framework
+- `langchain`, `langchain-anthropic` - Agent framework + Claude integration
+- `anthropic` - Anthropic Python SDK
+- `langgraph` - Multi-agent orchestration
+- `mcp` - MCP server connections
+- `biomcp-python` - Biomedical research tools
+- And other utilities (see `requirements.txt` for full list)
 
-### Step 4: Setup PubChem MCP Server
+### 4. Set Your Anthropic API Key
 
-The PubChem server is already created and Node.js dependencies are installed. No build step required - the server runs directly from `index.js`.
+You need a Claude API key from [console.anthropic.com](https://console.anthropic.com/).
 
-**Verify server file exists:**
+**Option A: Create a `.env` file (recommended)**
+
+Create a file named `.env` inside the `streamlit-app/` directory with this content:
+
+```
+ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
+```
+
+**Option B: Set as environment variable**
+
+Windows (Command Prompt):
+```cmd
+set ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
+```
+
+Windows (PowerShell):
+```powershell
+$env:ANTHROPIC_API_KEY = "sk-ant-api03-YOUR-KEY-HERE"
+```
+
+macOS/Linux:
 ```bash
-ls ../servers/pubchem/index.js
+export ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
 ```
 
-**Test the server (optional):**
+### 5. (Optional) Install MCP Servers
+
+The system works without MCP servers in **direct LLM mode** - Claude Sonnet 4.5 answers questions using its own knowledge. To enable MCP tool access for live data:
+
 ```bash
-cd ../servers/pubchem
-node index.js
-# Should output: "PubChem MCP server running on stdio"
-# Press Ctrl+C to exit
-cd ../../streamlit-app
+# From the repository root (one level up from streamlit-app)
+cd ../servers/pubchem && npm install
+cd ../servers/literature && npm install
+cd ../servers/data_analysis && npm install
+cd ../servers/web_knowledge && npm install
+
+# BioMCP (Python-based) - install in your venv
+pip install biomcp-python
 ```
 
-## Configuration
+### 6. Launch the Application
 
-### `config.py`
-
-All settings are configured in `streamlit-app/config.py`:
-
-```python
-# Ollama Settings
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.2"  # Change to use different model
-
-# MCP Server Configuration
-MCP_SERVERS = {
-    "pubchem": {
-        "command": "node",
-        "args": ["../servers/pubchem/index.js"],  # Direct path, no build needed
-        "description": "PubChem MCP server for chemical compound data"
-    }
-}
-
-# Agent Settings
-AGENT_MAX_ITERATIONS = 10  # Maximum reasoning/action cycles
-AGENT_VERBOSE = True       # Print agent logs to console
+**Windows (recommended):**
+```cmd
+run.bat
 ```
 
-## Running the Demo
-
-### Quick Start
-
-1. **Ensure you're in the streamlit-app directory with virtual environment activated:**
-   ```bash
-   cd streamlit-app
-   venv\Scripts\activate  # Windows
-   # OR
-   source venv/bin/activate  # macOS/Linux
-   ```
-
-2. **Verify Ollama is running and model is available:**
-   ```bash
-   ollama list
-   # Should show: llama3.2:latest
-   ```
-
-3. **Start the Streamlit app:**
-   ```bash
-   streamlit run app.py
-   ```
-
-4. **Access the web interface:**
-   - The app will automatically open at: `http://localhost:8501`
-   - Or manually navigate to the URL shown in terminal
-
-### Startup Messages
-
-When the app starts, you should see:
-```
-Connecting to MCP server: pubchem...
-✓ Connected to pubchem, loaded 2 tools
+**Any platform:**
+```bash
+streamlit run app.py
 ```
 
-If you see errors, check the [Troubleshooting](#troubleshooting) section.
+The application opens automatically at **http://localhost:8501**.
 
-## Usage
+---
 
-### Example Queries
+## Using the Application
 
-Try these natural language questions:
+### Asking Questions
 
-**Basic Properties:**
+Type any pharmaceutical research question in the chat input. Examples:
+
+**Chemistry:**
 - "What is the molecular formula of aspirin?"
-- "What is the molecular weight of caffeine?"
-- "Tell me about glucose"
+- "Explain the mechanism of action of ibuprofen"
+- "What are the ADMET properties of metformin?"
 
-**Detailed Information:**
-- "Find information about acetaminophen"
-- "What are the properties of ethanol?"
-- "Search for information about ibuprofen"
+**Clinical Trials:**
+- "What are the phases of clinical trials?"
+- "Find clinical trials for BRCA gene therapies"
 
-**Multi-step Reasoning:**
-- "Compare the molecular weights of caffeine and aspirin"
-- "What is the IUPAC name of caffeine and what does it mean?"
+**Genetics:**
+- "What is the role of p53 in cancer?"
+- "How does CRISPR gene editing work?"
+- "Explain the EGFR signaling pathway"
 
-### Understanding Agent Reasoning
+**Multi-Agent Queries (triggers multiple agents):**
+- "Analyze the competitive landscape for GLP-1 receptor agonists including clinical trials and gene targets"
+- "Find research papers on CRISPR-Cas9 applications in oncology and related drug compounds"
 
-The agent uses a ReAct (Reasoning + Acting) loop:
+### How Multi-Agent Orchestration Works
 
-1. **Thought**: Agent reasons about what to do next
-2. **Action**: Agent decides to use a tool (e.g., search_compounds_by_name)
-3. **Observation**: Agent receives tool results
-4. **Repeat**: Continue until final answer is reached
+1. The orchestrator analyzes your query and extracts keywords
+2. It scores each agent's relevance (Chemical, Clinical, Literature, Gene, Data)
+3. Selects the best agents (1-3 depending on complexity)
+4. Runs agents in parallel or sequentially as needed
+5. Claude Sonnet 4.5 synthesizes all agent results into one comprehensive response
 
-**To view the reasoning process:**
-- Click "🔍 View Agent Reasoning Process" in any chat response
-- See each action taken and observation received
-- Understand the agent's decision-making process
+Click **"View Agent Reasoning Process"** in any response to see the step-by-step tool usage.
 
-### Example Interaction
+---
 
-**User:** "What is the molecular weight of caffeine?"
+## Generating a Full Test Report
 
-**Agent Process:**
-1. **ACTION:** search_compounds_by_name
-   - **INPUT:** `{"name": "caffeine"}`
-   - **OBSERVATION:** Found CID 2519
-2. **ACTION:** get_compound_properties
-   - **INPUT:** `{"cid": 2519}`
-   - **OBSERVATION:** Retrieved properties including MolecularWeight: 194.19
-3. **FINAL ANSWER:** "The molecular weight of caffeine is 194.19 g/mol."
+### Option 1: Run the System Test
 
-## Adding More MCP Servers
+This validates all components end-to-end:
 
-The architecture supports multiple MCP servers running simultaneously.
-
-### Step 1: Add Your MCP Server
-
-Place your server in the `servers/` directory:
-```
-servers/
-├── pubchem/          # Existing
-│   ├── index.js
-│   └── package.json
-└── your-server/      # New
-    ├── server.py     # Or server.js
-    └── requirements.txt
+```bash
+cd streamlit-app
+python test_system.py
 ```
 
-### Step 2: Update Configuration
+The test covers:
+- Claude Sonnet 4.5 connectivity
+- All 5 specialized agents
+- LangGraph orchestrator workflow
+- Multi-agent synthesis
+- Report generation
 
-Add to `config.py`:
+A markdown report is saved to `streamlit-app/` with timestamped filename.
+
+### Option 2: Programmatic Report
+
 ```python
-MCP_SERVERS = {
-    "pubchem": {
-        "command": "node",
-        "args": ["../servers/pubchem/index.js"],
-        "description": "PubChem MCP server for chemical compound data"
-    },
-    "your_server": {
-        "command": "python",  # or "node", etc.
-        "args": ["../servers/your-server/server.py"],
-        "description": "Your custom MCP server"
-    }
-}
+import asyncio
+from agents.orchestrator_agent import OrchestratorAgent
+
+async def generate_report():
+    orchestrator = OrchestratorAgent(
+        mcp_orchestrator=None,
+        governance_gateway=None
+    )
+
+    result = await orchestrator.process_query(
+        query="Analyze aspirin: molecular properties, clinical trials, and gene targets",
+        session_id="test-session",
+        user_id="test-user"
+    )
+
+    print(result["final_answer"])
+
+asyncio.run(generate_report())
 ```
 
-### Step 3: Restart Streamlit
+### Option 3: From the Streamlit UI
 
-All servers are loaded on startup. The agent automatically has access to all tools from all servers.
+1. Open `http://localhost:8501`
+2. Enter a complex research query
+3. The orchestrator assigns multiple agents and synthesizes results
+4. Copy the synthesized response as your report
+
+---
 
 ## Project Structure
 
 ```
 streamlit-app/
-├── app.py              # Main Streamlit application & UI
-├── agent.py            # Custom ReAct agent implementation
-├── mcp_tools.py        # MCP server connection & tool wrapping
-├── config.py           # Configuration settings
-├── requirements.txt    # Python dependencies
-├── README.md           # This file
-└── venv/               # Virtual environment (created during setup)
-
-../servers/
-└── pubchem/
-    ├── index.js        # PubChem MCP server implementation
-    ├── package.json    # Node.js dependencies
-    └── node_modules/   # Installed Node packages
+├── app.py                          # Main Streamlit entry point
+├── agent.py                        # Simple MCP agent with tool calling
+├── config.py                       # Configuration (Claude model, MCP servers, features)
+├── mcp_tools.py                    # MCP server connection and tool wrapper
+├── run.bat                         # Windows startup script
+├── requirements.txt                # Python dependencies
+├── .env                            # API key (create this - not in git)
+│
+├── agents/                         # Specialized agent implementations
+│   ├── base_agent.py               # Abstract base class
+│   ├── chemical_agent.py           # Chemistry & drug compounds
+│   ├── clinical_agent.py           # Clinical trials & regulatory
+│   ├── gene_agent.py               # Genetics & molecular biology
+│   ├── literature_agent.py         # Scientific literature
+│   ├── data_agent.py               # Data analysis & statistics
+│   └── orchestrator_agent.py       # LangGraph multi-agent orchestrator
+│
+├── orchestration/                  # Dual orchestration system
+│   ├── agent_orchestrator.py       # Top-layer: agent routing & task decomposition
+│   ├── mcp_orchestrator.py         # Bottom-layer: MCP server routing
+│   ├── performance_kb.py           # Bidirectional learning knowledge base
+│   ├── session_manager.py          # Research session memory
+│   └── tool_composer.py            # Dynamic tool composition
+│
+├── reporting/                      # Report generation
+│   ├── report_generator.py         # Markdown/PDF report engine
+│   └── exporters/                  # Format exporters
+│
+├── utils/                          # Utilities
+│   └── llm_factory.py              # Centralized Claude LLM factory
+│
+├── governance/                     # Governance & compliance layer
+├── context/                        # Persistence layer (SQLite, ChromaDB)
+├── models/                         # Data models
+└── data/                           # Runtime data storage
 ```
 
-## How It Works
+---
 
-### Agent Implementation
+## Configuration Reference
 
-Unlike typical LangChain agents, this uses a **custom ReAct implementation** to avoid compatibility issues with LangChain's evolving agent APIs.
+All LLM settings are in `config.py`:
 
-**Key Components:**
+| Setting | Value | Description |
+|---------|-------|-------------|
+| `CLAUDE_MODEL` | `claude-sonnet-4-5-20250514` | Claude Sonnet 4.5 |
+| `CLAUDE_TEMPERATURE` | `0.7` | Response creativity (0-1) |
+| `CLAUDE_MAX_TOKENS` | `8192` | Max output tokens per response |
+| `LLM_PROVIDER` | `anthropic` | LLM provider |
 
-1. **Prompt Engineering** (`agent.py:_create_prompt`)
-   - Instructs LLM on available tools
-   - Defines ACTION/INPUT/OBSERVATION format
-   - Requests structured responses
+### MCP Servers (configured in `config.py`)
 
-2. **Action Parsing** (`agent.py:_parse_action`)
-   - Extracts tool name and parameters from LLM response
-   - Handles JSON parsing with fallbacks
+| Server | Purpose | Agent(s) |
+|--------|---------|----------|
+| `pubchem` | Chemical compound data | ChemicalAgent |
+| `biomcp` | PubMed, clinical trials, variants, genes | All agents |
+| `literature` | PubMed articles and citations | LiteratureAgent |
+| `data_analysis` | Statistics and molecular descriptors | DataAgent |
+| `web_knowledge` | Wikipedia, clinical trials, gene/drug info | All agents |
 
-3. **Tool Execution Loop** (`agent.py:query`)
-   - Iterates up to `AGENT_MAX_ITERATIONS` times
-   - Executes tools and provides observations back to LLM
-   - Continues until LLM provides FINAL ANSWER
+### Feature Flags
 
-4. **MCP Integration** (`mcp_tools.py`)
-   - Manages async MCP server connections
-   - Wraps MCP tools as LangChain Tool objects
-   - Handles stdio transport and result parsing
+| Flag | Default | Description |
+|------|---------|-------------|
+| `use_specialized_agents` | `True` | Enable 5 specialized agents |
+| `use_langgraph_orchestrator` | `True` | Enable LangGraph orchestration |
+| `enable_reporting` | `True` | Enable report generation |
+| `use_persistent_context` | `False` | SQLite/ChromaDB persistence |
+| `use_governance_gateway` | `False` | Compliance gateway |
 
-### MCP Server Communication
-
-The PubChem server uses the **stdio transport protocol**:
-- Python spawns Node.js process
-- Communication via stdin/stdout
-- JSON-RPC message format
-- Asynchronous request/response
+---
 
 ## Troubleshooting
 
-### "Failed to connect to Ollama"
+### "ANTHROPIC_API_KEY not set"
 
-**Symptoms:**
-- Error message about Ollama connection
-- Agent fails to initialize
+- Verify `.env` file exists in the `streamlit-app/` directory (not the repo root)
+- Verify the key starts with `sk-ant-`
+- Try setting directly: `set ANTHROPIC_API_KEY=sk-ant-...` (Windows) or `export ANTHROPIC_API_KEY=sk-ant-...` (Linux/Mac)
+- Restart Streamlit after changing the key
 
-**Solutions:**
-1. Check if Ollama is running:
-   ```bash
-   ollama list  # Should not error
-   ```
-2. Start Ollama if needed:
-   ```bash
-   ollama serve
-   ```
-3. Verify model is installed:
-   ```bash
-   ollama list
-   # Should show: llama3.2:latest
-   ```
-4. Check config.py has correct base URL:
-   ```python
-   OLLAMA_BASE_URL = "http://localhost:11434"
-   ```
+### "MCP servers not available"
 
-### "Failed to connect to MCP server: pubchem"
+This is normal if MCP servers aren't installed. The system gracefully falls back to direct Claude LLM mode. To install, see Step 5 above.
 
-**Symptoms:**
-- `✗ Failed to connect to pubchem`
-- "Connection closed" error
-- "No tools were loaded from MCP servers"
+### Import Errors
 
-**Solutions:**
+- Make sure your virtual environment is activated (`venv\Scripts\activate` on Windows)
+- Run `pip install -r requirements.txt` again
+- Check Python version: `python --version` (needs 3.10+)
 
-1. **Test server directly:**
-   ```bash
-   cd servers/pubchem
-   node index.js
-   # Should output: "PubChem MCP server running on stdio"
-   ```
+### "Streamlit not found"
 
-   If you see errors:
-   - Check Node.js is installed: `node --version`
-   - Ensure dependencies are installed: `npm install`
-   - Verify `index.js` exists
-
-2. **Check config.py path:**
-   ```python
-   # Should be:
-   "args": ["../servers/pubchem/index.js"]
-   # NOT:
-   "args": ["../servers/pubchem/build/index.js"]  # ❌ Wrong
-   ```
-
-3. **Check Python MCP SDK version:**
-   ```bash
-   pip show mcp
-   # Should show version 0.9.0 or compatible
-   ```
-
-### "No tools were loaded from MCP servers"
-
-**Symptoms:**
-- Warning message in Streamlit
-- No tools available in dropdown
-- Agent cannot execute actions
-
-**Solutions:**
-1. Check terminal output for connection errors
-2. Verify MCP server is in correct path
-3. Test server independently (see above)
-4. Check Python virtual environment is activated
-
-### Agent Gives Incorrect/Incomplete Answers
-
-**Symptoms:**
-- Agent reaches max iterations
-- Wrong information returned
-- Agent gets stuck in loop
-
-**Solutions:**
-
-1. **Try a larger model:**
-   ```bash
-   ollama pull llama3  # Larger, more capable
-   ```
-   Update `config.py`:
-   ```python
-   OLLAMA_MODEL = "llama3"
-   ```
-
-2. **Increase iteration limit:**
-   ```python
-   AGENT_MAX_ITERATIONS = 20  # In config.py
-   ```
-
-3. **Check reasoning process:**
-   - Click "View Agent Reasoning Process"
-   - See where agent gets confused
-   - May need to rephrase question
-
-4. **Verify data availability:**
-   - Some compounds may not exist in PubChem
-   - Try a well-known compound first (e.g., "aspirin")
-
-### "ollama: command not found" (Windows)
-
-**Symptoms:**
-- PowerShell can't find `ollama` command
-- Recently installed Ollama
-
-**Solution:**
-Restart PowerShell or refresh PATH:
-```powershell
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-ollama --version  # Should now work
+```bash
+pip install streamlit
+# Or use:
+python -m streamlit run app.py
 ```
 
-## Performance Notes
+### Rate Limiting
 
-- **First Query Delay:** Initial query may be slower due to:
-  - MCP server startup (~1-2 seconds)
-  - First LLM inference (model loading)
-  - Subsequent queries are faster
+Claude Sonnet 4.5 has API rate limits. If you get rate limit errors:
+- Wait a moment and retry
+- Reduce query complexity
+- Check your Anthropic usage tier at [console.anthropic.com](https://console.anthropic.com/)
 
-- **LLM Inference Time:** Each agent iteration takes ~2-10 seconds depending on:
-  - Model size (llama3.2 is faster than llama3)
-  - Hardware (GPU vs CPU)
-  - Complexity of reasoning
-
-- **Expected Query Time:** Typical queries complete in:
-  - Simple properties: 10-20 seconds (2-3 agent iterations)
-  - Complex queries: 20-40 seconds (4-6 iterations)
-
-## Known Limitations
-
-1. **LangChain Version Compatibility:**
-   - Built for LangChain 1.0+
-   - Uses custom agent to avoid deprecated APIs
-   - May need updates for future LangChain versions
-
-2. **Single Conversation Context:**
-   - No conversation memory between queries
-   - Each query is independent
-   - Future: Add conversation history
-
-3. **Ollama Local Only:**
-   - Requires local Ollama installation
-   - Cannot use cloud LLM APIs (OpenAI, Anthropic)
-   - Future: Add support for remote LLMs
-
-4. **Text-Only Output:**
-   - No visualization of chemical structures
-   - No rendering of 2D/3D molecular diagrams
-   - Future: Add chemical structure rendering
-
-## Future Enhancements
-
-Planned improvements:
-
-- [ ] **Conversation Memory** - Remember previous queries in session
-- [ ] **Multi-MCP Demo** - Add second MCP server (e.g., Wikipedia, Weather)
-- [ ] **Chemical Structure Visualization** - Render 2D molecular structures
-- [ ] **Export Functionality** - Download query results as JSON/CSV
-- [ ] **Batch Queries** - Query multiple compounds at once
-- [ ] **Result Caching** - Cache PubChem API responses
-- [ ] **Cloud LLM Support** - Option to use OpenAI/Anthropic APIs
-- [ ] **Advanced Agent Patterns** - Tool chaining, parallel execution
-- [ ] **Unit Tests** - Test coverage for agent and MCP integration
-- [ ] **Docker Deployment** - Containerized deployment option
+---
 
 ## License
 
-This is a prototype/demo application for the BU Senior Design project.
-
-## Contributing
-
-This project is part of BU Senior Design EMD Serono team. For questions or contributions, please contact the project team.
+BU Senior Design project - EMD Serono team.
 
 ## Resources
 
+- **Anthropic Console:** https://console.anthropic.com/
+- **Claude API Docs:** https://docs.anthropic.com/
 - **MCP Documentation:** https://modelcontextprotocol.io/
-- **Ollama:** https://ollama.com/
-- **PubChem API:** https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest
 - **Streamlit:** https://docs.streamlit.io/
 - **LangChain:** https://python.langchain.com/
-
-## Acknowledgments
-
-- **PubChem** for providing free chemical compound data API
-- **Ollama** for local LLM runtime
-- **Anthropic** for Model Context Protocol specification
-- **Meta** for Llama models
+- **LangGraph:** https://langchain-ai.github.io/langgraph/

@@ -1,49 +1,63 @@
 """
-Agent module - Sets up a simple agent with Ollama and MCP tools.
+Agent module - Sets up a simple agent with Claude Sonnet 4.5 LLM and MCP tools.
 """
 
 from typing import List, Dict, Any, Optional, Tuple
-from langchain_core.tools import Tool
-from langchain_ollama import OllamaLLM
-from config import OLLAMA_BASE_URL, OLLAMA_MODEL, AGENT_MAX_ITERATIONS, AGENT_VERBOSE
 import json
 import re
+from langchain_core.tools import Tool
+from utils.llm_factory import get_llm
+from config import AGENT_MAX_ITERATIONS, AGENT_VERBOSE
 
 
 class MCPAgent:
-    """Simple agent that uses Ollama LLM and MCP tools."""
+    """Simple agent that uses Claude Sonnet 4.5 and MCP tools."""
 
-    def __init__(self, tools: List[Tool], model_name: str = OLLAMA_MODEL):
+    def __init__(self, tools: List[Tool]):
         """
         Initialize the MCP agent.
 
         Args:
             tools: List of LangChain tools (from MCP servers)
-            model_name: Name of the Ollama model to use
         """
         self.tools = tools
-        self.model_name = model_name
         self.llm = None
         self.tools_dict = {tool.name: tool for tool in tools}
 
         self._setup_agent()
 
     def _setup_agent(self):
-        """Set up the Ollama LLM."""
-        self.llm = OllamaLLM(
-            model=self.model_name,
-            base_url=OLLAMA_BASE_URL,
-            temperature=0.7,
-        )
+        """Set up the LLM using the factory."""
+        try:
+            self.llm = get_llm(temperature=0.7)
+        except ValueError as e:
+            raise ValueError(
+                f"Failed to initialize LLM: {e}\n"
+                "Make sure to set ANTHROPIC_API_KEY environment variable."
+            )
+        except ImportError as e:
+            raise ImportError(
+                f"Missing required package: {e}\n"
+                "Run: pip install -r requirements.txt"
+            )
 
     def _create_prompt(self, question: str) -> str:
         """Create a prompt for the LLM with available tools."""
+        if not self.tools:
+            return f"""You are a helpful AI assistant specialized in pharmaceutical research, chemistry, biology, and drug development.
+
+Please answer the following question to the best of your knowledge:
+
+Question: {question}
+
+Answer:"""
+
         tools_desc = "\n".join([
             f"- {tool.name}: {tool.description}"
             for tool in self.tools
         ])
 
-        prompt = f"""You are a helpful AI assistant that can query chemical compound databases.
+        return f"""You are a helpful AI assistant that can query chemical compound databases.
 
 Available tools:
 {tools_desc}
@@ -59,13 +73,10 @@ Question: {question}
 
 Let's think step by step:"""
 
-        return prompt
-
     def _parse_action(self, text: str) -> Optional[Tuple[str, Dict[str, Any]]]:
         """Parse action and input from LLM response."""
-        # Look for ACTION and INPUT pattern
         action_match = re.search(r'ACTION:\s*(\w+)', text, re.IGNORECASE)
-        input_match = re.search(r'INPUT:\s*({[^}]+})', text, re.IGNORECASE | re.DOTALL)
+        input_match = re.search(r'INPUT:\s*(\{[^}]+\})', text, re.IGNORECASE | re.DOTALL)
 
         if action_match and input_match:
             action = action_match.group(1).strip()
@@ -74,9 +85,7 @@ Let's think step by step:"""
                 tool_input = json.loads(input_str)
                 return action, tool_input
             except json.JSONDecodeError:
-                # Try to extract key-value pairs manually
                 input_text = input_match.group(1).strip()
-                # Simple parsing for single parameter
                 if '"' in input_text:
                     parts = input_text.split('"')
                     if len(parts) >= 4:
@@ -105,23 +114,38 @@ Let's think step by step:"""
         intermediate_steps = []
         conversation = self._create_prompt(question)
 
+        # If no tools, use direct LLM mode
+        if not self.tools:
+            try:
+                response = self.llm.invoke(conversation)
+                answer = response.content if hasattr(response, 'content') else str(response)
+                return {
+                    "output": answer,
+                    "intermediate_steps": []
+                }
+            except Exception as e:
+                return {
+                    "output": f"Error generating response: {str(e)}",
+                    "intermediate_steps": []
+                }
+
+        # Tool-calling mode
         try:
             for iteration in range(AGENT_MAX_ITERATIONS):
                 if AGENT_VERBOSE:
                     print(f"\n=== Iteration {iteration + 1} ===")
-                    print(f"Prompt: {conversation[-500:]}")  # Last 500 chars
 
-                # Get LLM response
                 response = self.llm.invoke(conversation)
+                response_text = response.content if hasattr(response, 'content') else str(response)
 
                 if AGENT_VERBOSE:
-                    print(f"Response: {response}")
+                    print(f"Response: {response_text[:500]}")
 
                 # Check for final answer
-                if "FINAL ANSWER:" in response.upper():
+                if "FINAL ANSWER:" in response_text.upper():
                     final_answer = re.search(
                         r'FINAL ANSWER:\s*(.+)',
-                        response,
+                        response_text,
                         re.IGNORECASE | re.DOTALL
                     )
                     if final_answer:
@@ -131,18 +155,15 @@ Let's think step by step:"""
                         }
 
                 # Try to parse action
-                action_result = self._parse_action(response)
+                action_result = self._parse_action(response_text)
 
                 if action_result:
                     action_name, action_input = action_result
 
-                    # Execute tool
                     if action_name in self.tools_dict:
                         tool = self.tools_dict[action_name]
                         try:
                             observation = tool.func(json.dumps(action_input))
-
-                            # Store intermediate step
                             intermediate_steps.append((
                                 type('Action', (), {
                                     'tool': action_name,
@@ -150,22 +171,17 @@ Let's think step by step:"""
                                 })(),
                                 observation
                             ))
-
-                            # Add to conversation
-                            conversation += f"\n\n{response}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
-
+                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
                         except Exception as e:
                             observation = f"Error executing tool: {str(e)}"
-                            conversation += f"\n\n{response}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
+                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
                     else:
-                        conversation += f"\n\n{response}\n\nError: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nWhat should I do next?"
+                        conversation += f"\n\n{response_text}\n\nError: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nWhat should I do next?"
                 else:
-                    # No clear action, ask LLM to clarify or provide final answer
-                    conversation += f"\n\n{response}\n\nPlease either use a tool with ACTION/INPUT format or provide a FINAL ANSWER."
+                    conversation += f"\n\n{response_text}\n\nPlease either use a tool with ACTION/INPUT format or provide a FINAL ANSWER."
 
-            # Max iterations reached
             return {
-                "output": "I apologize, but I couldn't find a complete answer within the iteration limit. Please try rephrasing your question or being more specific.",
+                "output": "I apologize, but I couldn't find a complete answer within the iteration limit. Please try rephrasing your question.",
                 "intermediate_steps": intermediate_steps
             }
 

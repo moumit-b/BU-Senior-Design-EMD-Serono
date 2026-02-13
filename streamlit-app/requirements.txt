@@ -3,10 +3,12 @@ streamlit>=1.32.0
 
 # LangChain for agent framework
 langchain>=0.1.0
+langchain-core>=0.1.0
 langchain-community>=0.0.20
 
-# Ollama integration for LangChain
-langchain-ollama>=0.1.0
+# Anthropic Claude integration for LangChain (PRIMARY LLM)
+langchain-anthropic>=0.3.0
+anthropic>=0.40.0
 
 # LangGraph for agent orchestration (dual orchestration system)
 langgraph>=0.2.0
@@ -24,5 +26,11 @@ httpx>=0.25.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 
-# Optional: For enhanced caching (Redis-based)
-# redis>=5.0.0
+# Persistent Context Layer
+sqlalchemy>=2.0.0
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+
+# Report Generation
+weasyprint>=60.0
+markdown>=3.5.0

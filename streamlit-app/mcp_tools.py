@@ -4,14 +4,20 @@ MCP Tools module - Connects to MCP servers and exposes their tools to LangChain.
 
 import asyncio
 from typing import List, Dict, Any, Optional
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-try:
-    from langchain_core.tools import Tool
-except ImportError:
-    from langchain.tools import Tool
-from pydantic import BaseModel, Field
 import json
+
+# Import MCP components if available
+try:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    print("[WARNING] MCP package not available. MCP server connections will not work.")
+
+# Import LangChain Tool
+from langchain_core.tools import Tool
+from pydantic import BaseModel, Field
 
 
 class MCPToolWrapper:
@@ -156,6 +162,11 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
     Returns:
         List of LangChain tools from all connected MCP servers
     """
+    if not MCP_AVAILABLE:
+        print("[WARNING] MCP package not installed. Skipping MCP server initialization.")
+        print("[INFO] Install with: pip install mcp")
+        return []
+
     all_tools = []
 
     for server_name, config in servers_config.items():

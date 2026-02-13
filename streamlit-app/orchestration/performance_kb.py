@@ -49,14 +49,24 @@ class PerformanceKnowledgeBase:
     1. MCP layer to teach agents (e.g., "BioMCP is best for inhibitor queries")
     2. Agents to teach MCP layer (e.g., "Preprocessing improves trial ID extraction")
     3. System to discover emergent patterns (e.g., "Chemical Agent + BioMCP = 90% success")
+
+    Phase 4 Update: Persists patterns to SQLite for long-term learning.
     """
 
-    def __init__(self):
+    def __init__(self, db_path: str = "data/sessions.db", enable_persistence: bool = True):
         """Initialize the performance knowledge base."""
         self.agent_learnings: Dict[str, AgentLearning] = {}
         self.mcp_learnings: Dict[str, MCPLearning] = {}
         self.cross_layer_patterns: List[CrossLayerPattern] = []
         self.agent_performances: Dict[str, AgentPerformance] = {}
+
+        # Phase 4: Persistence
+        self.enable_persistence = enable_persistence
+        if enable_persistence:
+            from context.database import DatabaseManager
+            self.db_manager = DatabaseManager(db_path)
+            self.db_manager.initialize()
+            self._load_from_database()
 
     # === Agent Learning ===
 
@@ -176,6 +186,11 @@ class PerformanceKnowledgeBase:
                 times_observed=1,
             )
             self.cross_layer_patterns.append(new_pattern)
+            existing_pattern = new_pattern
+
+        # Phase 4: Persist to database
+        if existing_pattern and self.enable_persistence:
+            self._save_pattern_to_database(existing_pattern)
 
     def get_best_pattern_for_agent(
         self,
@@ -301,3 +316,81 @@ class PerformanceKnowledgeBase:
                 insights.append(f"✓ {mcp_name}: {learning.strengths[0]}")
 
         return insights
+
+    # === Phase 4: Persistence Methods ===
+
+    def _load_from_database(self):
+        """Load performance patterns from database."""
+        if not self.enable_persistence:
+            return
+
+        try:
+            from context.db_models import PerformancePatternRecord
+
+            with self.db_manager.get_session() as session:
+                patterns = session.query(PerformancePatternRecord).all()
+
+                for record in patterns:
+                    if record.pattern_type == "cross_layer":
+                        # Reconstruct cross-layer pattern
+                        pattern_data = record.pattern_data_json
+                        pattern = CrossLayerPattern(
+                            pattern_id=pattern_data.get("pattern_id", ""),
+                            description=pattern_data.get("description", ""),
+                            agent_name=record.agent_name or "",
+                            mcp_name=record.mcp_server or "",
+                            query_type=QueryType(pattern_data.get("query_type", "general")),
+                            success_rate=record.success_rate or 0.0,
+                            times_observed=record.usage_count or 0
+                        )
+                        self.cross_layer_patterns.append(pattern)
+        except Exception as e:
+            # Fail silently - persistence is optional
+            print(f"Warning: Could not load patterns from database: {e}")
+
+    def _save_pattern_to_database(self, pattern: CrossLayerPattern):
+        """Save a cross-layer pattern to database."""
+        if not self.enable_persistence:
+            return
+
+        try:
+            from context.db_models import PerformancePatternRecord
+
+            with self.db_manager.get_session() as session:
+                # Check if pattern exists
+                existing = session.query(PerformancePatternRecord).filter_by(
+                    pattern_type="cross_layer",
+                    agent_name=pattern.agent_name,
+                    mcp_server=pattern.mcp_name,
+                    query_type=pattern.query_type.value
+                ).first()
+
+                if existing:
+                    # Update existing
+                    existing.success_rate = pattern.success_rate
+                    existing.usage_count = pattern.times_observed
+                    existing.pattern_data_json = {
+                        "pattern_id": pattern.pattern_id,
+                        "description": pattern.description,
+                        "query_type": pattern.query_type.value
+                    }
+                else:
+                    # Create new
+                    new_record = PerformancePatternRecord(
+                        pattern_type="cross_layer",
+                        agent_name=pattern.agent_name,
+                        mcp_server=pattern.mcp_name,
+                        query_type=pattern.query_type.value,
+                        success_rate=pattern.success_rate,
+                        usage_count=pattern.times_observed,
+                        pattern_data_json={
+                            "pattern_id": pattern.pattern_id,
+                            "description": pattern.description,
+                            "query_type": pattern.query_type.value
+                        }
+                    )
+                    session.add(new_record)
+
+                session.commit()
+        except Exception as e:
+            print(f"Warning: Could not save pattern to database: {e}")
