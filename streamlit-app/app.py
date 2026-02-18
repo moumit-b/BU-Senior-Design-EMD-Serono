@@ -58,8 +58,10 @@ def initialize_agent_with_config(config_name: str):
             if config_name == "standard":
                 mcp_servers = config_data.get("mcp_servers", {})
             else:
-                # For Merck config, use empty MCP servers for now (focus on LLM)
-                mcp_servers = {}
+                # For Merck config, use the same MCP servers as standard config
+                # Import standard config to get MCP servers
+                import config
+                mcp_servers = getattr(config, 'MCP_SERVERS', {})
             
             tools = []
             if mcp_servers:
@@ -156,7 +158,7 @@ def main():
                 for error in llm_validation.get("errors", []):
                     st.error(f"• {error}")
             
-            # Show MCP servers for standard config
+            # Show MCP servers for both configurations
             if selected_config == "standard":
                 mcp_servers = config_data.get("mcp_servers", {})
                 if mcp_servers:
@@ -164,7 +166,15 @@ def main():
                     for server_name, server_config in mcp_servers.items():
                         st.markdown(f"• {server_name}: {server_config.get('description', 'N/A')}")
             else:
-                st.markdown("**Mode:** Direct LLM (No MCP servers)")
+                # For Merck config, show available MCP servers
+                import config
+                mcp_servers = getattr(config, 'MCP_SERVERS', {})
+                if mcp_servers:
+                    st.markdown("**MCP Servers:**")
+                    for server_name, server_config in mcp_servers.items():
+                        st.markdown(f"• {server_name}: {server_config.get('description', 'N/A')}")
+                else:
+                    st.markdown("**Mode:** Direct LLM (No MCP servers)")
         
         st.divider()
         
