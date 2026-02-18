@@ -1,26 +1,28 @@
 """
-Agent module - Sets up a simple agent with Claude Sonnet 4.5 LLM and MCP tools.
+Agent module - Sets up a simple agent with configurable LLM and MCP tools.
 """
 
 from typing import List, Dict, Any, Optional, Tuple
 import json
 import re
 from langchain_core.tools import Tool
-from utils.llm_factory import get_llm
+from utils.llm_factory import get_llm_from_config
 from config import AGENT_MAX_ITERATIONS, AGENT_VERBOSE
 
 
 class MCPAgent:
-    """Simple agent that uses Claude Sonnet 4.5 and MCP tools."""
+    """Simple agent that uses configurable LLM and MCP tools."""
 
-    def __init__(self, tools: List[Tool]):
+    def __init__(self, tools: List[Tool], config_data: Optional[Dict[str, Any]] = None):
         """
         Initialize the MCP agent.
 
         Args:
             tools: List of LangChain tools (from MCP servers)
+            config_data: Configuration data from ConfigurationManager
         """
         self.tools = tools
+        self.config_data = config_data
         self.llm = None
         self.tools_dict = {tool.name: tool for tool in tools}
 
@@ -29,12 +31,21 @@ class MCPAgent:
     def _setup_agent(self):
         """Set up the LLM using the factory."""
         try:
-            self.llm = get_llm(temperature=0.7)
+            if self.config_data:
+                # Use new configuration system
+                self.llm = get_llm_from_config(self.config_data, temperature=0.7)
+            else:
+                # Fallback to legacy method for backward compatibility
+                from utils.llm_factory import get_llm
+                self.llm = get_llm(temperature=0.7)
+                
         except ValueError as e:
-            raise ValueError(
-                f"Failed to initialize LLM: {e}\n"
-                "Make sure to set ANTHROPIC_API_KEY environment variable."
-            )
+            error_msg = f"Failed to initialize LLM: {e}"
+            if self.config_data and self.config_data.get("profile", {}).name == "merck":
+                error_msg += "\nMake sure to set AZURE_OPENAI_API_KEY or AZURE_API_KEY environment variable."
+            else:
+                error_msg += "\nMake sure to set ANTHROPIC_API_KEY environment variable."
+            raise ValueError(error_msg)
         except ImportError as e:
             raise ImportError(
                 f"Missing required package: {e}\n"
