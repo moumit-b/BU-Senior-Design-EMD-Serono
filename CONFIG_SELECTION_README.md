@@ -120,6 +120,9 @@ MCPAgent with appropriate LLM
 ### Dependencies Missing:
 ```bash
 pip install -r requirements.txt
+
+# If you get langchain-openai import errors when using Merck configuration:
+pip install langchain-openai openai
 ```
 
 ## Future Enhancements

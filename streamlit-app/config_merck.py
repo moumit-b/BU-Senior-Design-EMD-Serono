@@ -4,10 +4,15 @@ Merck-specific configuration file for Agentic Platform Video Analysis System
 Integrates with your organization's Azure OpenAI and AWS Bedrock infrastructure
 """
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from typing import Dict, Any
 
-# Load environment variables
+# Load environment variables from .env file in the same directory
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+# Also try loading from default locations as fallback
 load_dotenv()
 
 class MerckLLMConfig:

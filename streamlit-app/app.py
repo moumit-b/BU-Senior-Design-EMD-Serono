@@ -34,15 +34,14 @@ def load_configuration_data(config_name: str):
     """Load configuration data and cache it in session state."""
     cache_key = f"config_data_{config_name}"
     
-    if cache_key not in st.session_state:
-        try:
-            config_data = config_manager.load_configuration(config_name)
-            st.session_state[cache_key] = config_data
-        except Exception as e:
-            st.error(f"Failed to load {config_name} configuration: {str(e)}")
-            return None
-    
-    return st.session_state[cache_key]
+    # Always reload configuration to pick up fresh environment variables
+    try:
+        config_data = config_manager.load_configuration(config_name)
+        st.session_state[cache_key] = config_data
+        return config_data
+    except Exception as e:
+        st.error(f"Failed to load {config_name} configuration: {str(e)}")
+        return None
 
 
 @st.cache_resource
