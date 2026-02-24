@@ -142,6 +142,7 @@ Let's think step by step:"""
 
         # Tool-calling mode
         try:
+            no_action_count = 0  # Track consecutive responses with no tool call
             for iteration in range(AGENT_MAX_ITERATIONS):
                 if AGENT_VERBOSE:
                     print(f"\n=== Iteration {iteration + 1} ===")
@@ -169,6 +170,7 @@ Let's think step by step:"""
                 action_result = self._parse_action(response_text)
 
                 if action_result:
+                    no_action_count = 0
                     action_name, action_input = action_result
 
                     if action_name in self.tools_dict:
@@ -189,7 +191,24 @@ Let's think step by step:"""
                     else:
                         conversation += f"\n\n{response_text}\n\nError: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nWhat should I do next?"
                 else:
+                    no_action_count += 1
+                    # If the LLM gave a substantial response without ACTION or
+                    # FINAL ANSWER markers, treat it as the final answer to
+                    # avoid looping endlessly (common with Azure OpenAI models).
+                    if no_action_count >= 2 or len(response_text.strip()) > 200:
+                        return {
+                            "output": response_text.strip(),
+                            "intermediate_steps": intermediate_steps
+                        }
                     conversation += f"\n\n{response_text}\n\nPlease either use a tool with ACTION/INPUT format or provide a FINAL ANSWER."
+
+            # If we exhausted iterations but got tool results, synthesize them
+            if intermediate_steps:
+                last_observations = [obs for _, obs in intermediate_steps[-3:]]
+                return {
+                    "output": "\n\n".join(last_observations),
+                    "intermediate_steps": intermediate_steps
+                }
 
             return {
                 "output": "I apologize, but I couldn't find a complete answer within the iteration limit. Please try rephrasing your question.",
