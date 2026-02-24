@@ -33,6 +33,28 @@ was migrated to Anthropic Claude Sonnet 4.5, but `.env.example` was never update
 
 **Fix**: Added entries for all of the above.
 
+### 4. Agent infinite loop during report generation (CRITICAL)
+**Symptom**: When generating a competitive intelligence report (complex multi-keyword query)
+with MCP tools connected, the agent appears to enter an infinite loop. The UI spinner runs
+for 50-100+ seconds before eventually returning a generic "couldn't find a complete answer"
+message.
+
+**Root cause**: `MCPAgent.query()` in `agent.py` uses a 10-iteration agentic loop. The LLM
+must respond with either `ACTION: tool_name / INPUT: {...}` or `FINAL ANSWER: ...` markers.
+Azure OpenAI GPT-4o (and sometimes Claude) often returns a substantive answer *without*
+these markers. When this happens:
+1. The agent doesn't recognize it as a final answer
+2. It appends the response + a nudge message to the conversation
+3. It loops again with an ever-growing prompt
+4. 10 iterations × 5-10s API latency = 50-100+ seconds of apparent hanging
+5. Finally returns a useless "couldn't find answer" message despite having gotten one
+
+**Fix**: Added two safeguards in `agent.py`:
+- If the LLM returns a response >200 chars without ACTION/FINAL ANSWER markers, or gives
+  2 consecutive responses without tool calls, treat the response as the final answer
+- If iterations are exhausted but tool observations exist, return those observations
+  instead of a generic error
+
 ---
 
 ## What Was NOT Broken
@@ -54,6 +76,7 @@ was migrated to Anthropic Claude Sonnet 4.5, but `.env.example` was never update
 | `streamlit-app/requirements.txt` | Comment out optional deps (chromadb, sentence-transformers, weasyprint) |
 | `streamlit-app/.env.example` | Update to show Anthropic key as primary, Merck as secondary |
 | `.gitignore` | Add data/, *.db, node_modules/, nul |
+| `streamlit-app/agent.py` | Fix agent loop: early-exit on substantive responses without markers |
 | `docs/claude_fix_log.md` | This file |
 
 ---
