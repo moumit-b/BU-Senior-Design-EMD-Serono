@@ -30,11 +30,14 @@ httpx>=0.25.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 
-# Persistent Context Layer
+# Persistent Context Layer (required for DB models even when feature is disabled)
 sqlalchemy>=2.0.0
-chromadb>=0.4.0
-sentence-transformers>=2.2.0
-
-# Report Generation
-weasyprint>=60.0
 markdown>=3.5.0
+
+# Optional: Persistent Context Layer - vector search (install manually if needed)
+# Requires large downloads; only needed when use_persistent_context=True in config.py
+# chromadb>=0.4.0
+# sentence-transformers>=2.2.0
+
+# Optional: PDF report export (requires system-level GTK/Cairo libraries)
+# weasyprint>=60.0
