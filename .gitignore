@@ -33,5 +33,15 @@ Thumbs.db
 results/
 *.log
 
+# Runtime data (SQLite databases, vector stores)
+streamlit-app/data/
+*.db
+
+# Node modules (install via npm install in each server directory)
+node_modules/
+
 # MCP old backup
 streamlit-app/mcp_old_backup/
+
+# Windows artifacts
+nul
