@@ -55,6 +55,17 @@ these markers. When this happens:
 - If iterations are exhausted but tool observations exist, return those observations
   instead of a generic error
 
+### 5. BioMCP SSL Certificate Issue (HIGH)
+**Symptom**: BioMCP was disabled because it failed to make HTTPS calls on the Merck corporate network. It would throw SSL verification errors when trying to connect to NCBI, clinicaltrials.gov, etc.
+
+**Root cause**: Merck's network uses a proxy that injects a self-signed certificate. BioMCP's HTTP client (using `httpx`) doesn't recognize this certificate by default.
+
+**Fix**:
+1. Created `servers/bio/run_biomcp.py` as a wrapper that can manage SSL settings.
+2. Created `servers/bio/_biomcp_no_ssl.py` to monkeypatch BioMCP's internal `http_client` and force `verify=False` when requested.
+3. Re-enabled `biomcp` in `streamlit-app/config.py`.
+4. Users can now set `BIOMCP_DISABLE_SSL=true` in their `.env` to bypass these errors on corporate networks.
+
 ---
 
 ## What Was NOT Broken
@@ -74,7 +85,10 @@ these markers. When this happens:
 | File | Change |
 |------|--------|
 | `streamlit-app/requirements.txt` | Comment out optional deps (chromadb, sentence-transformers, weasyprint) |
-| `streamlit-app/.env.example` | Update to show Anthropic key as primary, Merck as secondary |
+| `streamlit-app/config.py` | Re-enable BioMCP with SSL fix wrapper |
+| `servers/bio/run_biomcp.py` | BioMCP wrapper with SSL handling |
+| `servers/bio/_biomcp_no_ssl.py` | BioMCP SSL monkeypatch script |
+| `streamlit-app/.env.example` | Update to show Anthropic key as primary, Merck as secondary, and BioMCP toggle |
 | `.gitignore` | Add data/, *.db, node_modules/, nul |
 | `streamlit-app/agent.py` | Fix agent loop: early-exit on substantive responses without markers |
 | `docs/claude_fix_log.md` | This file |
@@ -116,3 +130,4 @@ cd ../servers/web_knowledge && node index.js
 |----------|-------------|-------------|
 | `ANTHROPIC_API_KEY` | Standard config (Claude Sonnet 4.5) | `streamlit-app/.env` |
 | `AZURE_OPENAI_API_KEY` | Merck enterprise config | `streamlit-app/.env` |
+| `BIOMCP_DISABLE_SSL` | Bypassing SSL errors on corporate networks | `streamlit-app/.env` |

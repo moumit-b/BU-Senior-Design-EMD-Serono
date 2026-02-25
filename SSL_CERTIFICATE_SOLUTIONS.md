@@ -113,10 +113,30 @@ export NODE_EXTRA_CA_CERTS=/path/to/your/certificate.pem
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 ```
 
+### Solution 6: BioMCP Python SSL Handling
+
+BioMCP is a Python-based server and uses `httpx` internally. It can be configured via a wrapper script.
+
+**File:** `servers/bio/run_biomcp.py`
+**Wrapper implementation:**
+- Uses `BIOMCP_DISABLE_SSL=true` to force `verify=False` in all HTTP calls.
+- Uses `SSL_CERT_PATH=/path/to/cert.pem` to use a custom CA bundle.
+
+**To use in .env:**
+```bash
+# Disable SSL for BioMCP (NCBI, MyGene.info, etc.)
+BIOMCP_DISABLE_SSL=true
+
+# OR use a custom certificate
+# SSL_CERT_PATH=C:/path/to/merck_ca.pem
+```
+
 ## Current Status
 
-✅ **Solution 1 is implemented** - SSL verification is disabled for the literature MCP server
-⚠️ **Security Note:** This allows the server to connect but bypasses certificate validation
+✅ **Literature Server:** Solution 1 implemented (SSL disabled in `index.js`).
+✅ **BioMCP Server:** Solution 6 implemented (SSL bypass via `run_biomcp.py` wrapper).
+
+⚠️ **Security Note:** Both servers are currently configured to allow SSL bypass via environment variables for compatibility with Merck's corporate network.
 
 ## Recommended Next Steps
 

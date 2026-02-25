@@ -51,7 +51,18 @@ was migrated to Anthropic Claude / Azure OpenAI.
 - `AZURE_OPENAI_API_KEY` is documented for Merck enterprise mode
 - Ollama moved to legacy/optional section
 
-### 4. Incomplete .gitignore (LOW)
+### 4. BioMCP SSL Certificate Issues (HIGH)
+
+BioMCP (Biomedical MCP server) was previously disabled because it failed to make
+outbound HTTPS calls on the Merck corporate network due to proxy-injected
+self-signed certificates.
+
+**What changed**: `servers/bio/run_biomcp.py`, `servers/bio/_biomcp_no_ssl.py`, `streamlit-app/config.py`
+- Re-enabled `biomcp` in the main configuration
+- Added a wrapper that allows bypassing SSL verification or using a custom CA bundle
+- Control this via `BIOMCP_DISABLE_SSL=true` in `.env`
+
+### 5. Incomplete .gitignore (LOW)
 
 Missing entries for runtime data files, `node_modules`, and Windows artifacts.
 
@@ -66,7 +77,10 @@ Missing entries for runtime data files, `node_modules`, and Windows artifacts.
 |------|-------------|
 | `streamlit-app/agent.py` | Fix agent loop: early-exit on substantive LLM responses |
 | `streamlit-app/requirements.txt` | Comment out optional deps that block pip install |
-| `streamlit-app/.env.example` | Update to reflect Anthropic/Azure as primary configs |
+| `streamlit-app/config.py` | Re-enable BioMCP with SSL fix wrapper |
+| `servers/bio/run_biomcp.py` | Wrapper to handle SSL certificate bypass for BioMCP |
+| `servers/bio/_biomcp_no_ssl.py` | Patch script to monkeypatch BioMCP SSL |
+| `streamlit-app/.env.example` | Update to reflect Anthropic/Azure as primary configs and add BioMCP SSL toggle |
 | `.gitignore` | Add runtime data, node_modules, Windows artifacts |
 | `docs/claude_fix_log.md` | Detailed fix log with root cause analysis |
 | `MERCK_CHANGES_FIXES.md` | This file |

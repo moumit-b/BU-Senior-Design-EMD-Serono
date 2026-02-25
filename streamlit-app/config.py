@@ -39,11 +39,11 @@ MCP_SERVERS = {
         "args": ["../servers/pubchem/index.js"],
         "description": "PubChem MCP server for chemical compound data"
     },
-    # "biomcp": {
-    #     "command": "python",
-    #     "args": ["-m", "biomcp", "run"],
-    #     "description": "BioMCP server - Comprehensive biomedical research (PubMed, clinical trials, variants, genes) - DISABLED due to SSL issues"
-    # },
+    "biomcp": {
+        "command": "python",
+        "args": ["../servers/bio/run_biomcp.py"],
+        "description": "BioMCP server - Comprehensive biomedical research (PubMed, clinical trials, variants, genes)"
+    },
     "literature": {
         "command": "node",
         "args": ["../servers/literature/index.js"],
