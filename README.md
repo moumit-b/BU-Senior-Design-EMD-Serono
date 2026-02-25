@@ -16,6 +16,11 @@ This project aims to develop a **Model Context Protocol (MCP)**–enabled multi-
 * **Integrate MCP servers** to enable interoperability between models, data pipelines, and tool providers.
 * **Develop an observability layer** that ensures auditability, transparency, and compliance in all agent actions.
 
+## Documentation
+* **[Merck Startup Guide](MERCK_STARTUP_GUIDE.md)** – **Recommended for EMD Serono/Merck users.**
+* **[Installation Guide](docs/INSTALLATION.md)** – General setup instructions.
+* **[Fix Log](docs/claude_fix_log.md)** – Detailed history of recent system fixes.
+
 ---
 
 ## Contributors
