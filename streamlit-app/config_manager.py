@@ -77,34 +77,25 @@ class ConfigurationManager:
                     "anthropic_api_key": getattr(config_module, 'ANTHROPIC_API_KEY', ''),
                     "claude_temperature": getattr(config_module, 'CLAUDE_TEMPERATURE', 0.7),
                     "claude_max_tokens": getattr(config_module, 'CLAUDE_MAX_TOKENS', 8192),
+                    "ollama_base_url": getattr(config_module, 'OLLAMA_BASE_URL', 'http://localhost:11434'),
+                    "ollama_model": getattr(config_module, 'OLLAMA_MODEL', 'llama3.2'),
                     "mcp_servers": getattr(config_module, 'MCP_SERVERS', {}),
                     "feature_flags": getattr(config_module, 'FEATURE_FLAGS', {}),
                 }
                 
             elif profile_name == "merck":
-                # Merck config_merck.py structure
-                merck_llm_config = getattr(config_module, 'MerckLLMConfig', None)
+                # Merck profile now uses Anthropic as well for simplicity
+                # This keeps the Merck branding/organization but uses the unified engine
                 system_config = getattr(config_module, 'SYSTEM_CONFIG', {})
                 
                 config_data = {
                     "profile": profile,
-                    "llm_config_class": merck_llm_config,
-                    "system_config": system_config,
-                    "scoring_config": getattr(config_module, 'SCORING_CONFIG', {}),
-                    # Extract commonly used values
                     "organization": system_config.get('organization', 'Merck R&D'),
                     "system_name": system_config.get('system_name', 'Agentic Platform'),
                     "environment": system_config.get('environment', 'production'),
+                    "claude_model": "claude-sonnet-4-5-20250514", # Standardize on Sonnet 4.5
+                    "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
                 }
-                
-                if merck_llm_config:
-                    config_data.update({
-                        "azure_openai_config": merck_llm_config.AZURE_OPENAI_CONFIG,
-                        "aws_bedrock_config": merck_llm_config.AWS_BEDROCK_CONFIG,
-                        "model_preferences": merck_llm_config.MODEL_PREFERENCES,
-                        "video_config": merck_llm_config.VIDEO_CONFIG,
-                        "database_config": merck_llm_config.DATABASE_CONFIG,
-                    })
             
             self._current_profile = profile_name
             self._current_config = config_data
@@ -159,15 +150,10 @@ class ConfigurationManager:
                 validation["llm_ready"] = bool(api_key)
                 
             elif profile_name == "merck":
-                # Validate Merck API key
-                llm_config = config_data.get("llm_config_class")
-                if llm_config:
-                    api_key = llm_config.get_api_key()
-                    validation["api_key_available"] = bool(api_key)
-                    validation["llm_ready"] = bool(api_key)
-                else:
-                    validation["api_key_available"] = False
-                    validation["llm_ready"] = False
+                # Validate Merck setup - now requires Anthropic API key as well
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                validation["api_key_available"] = bool(api_key)
+                validation["llm_ready"] = bool(api_key)
             
             return validation
             
@@ -195,29 +181,30 @@ class ConfigurationManager:
             config_data = self.load_configuration(profile_name) if profile_name != self._current_profile else self._current_config
             
             if profile_name == "standard":
-                return {
-                    "provider": "Anthropic",
-                    "model": config_data.get("claude_model", "claude-sonnet-4-5-20250514"),
-                    "temperature": config_data.get("claude_temperature", 0.7),
-                    "max_tokens": config_data.get("claude_max_tokens", 8192),
-                    "api_available": bool(config_data.get("anthropic_api_key"))
-                }
-                
-            elif profile_name == "merck":
-                llm_config = config_data.get("llm_config_class")
-                if llm_config:
-                    # Default to GPT-4o for general tasks
-                    default_model = llm_config.get_model_for_task("qa")
+                provider = config_data.get("llm_provider", "anthropic")
+                if provider == "ollama":
                     return {
-                        "provider": "Azure OpenAI / AWS Bedrock",
-                        "model": default_model,
-                        "azure_models": llm_config.AZURE_OPENAI_CONFIG["available_models"],
-                        "bedrock_models": llm_config.AWS_BEDROCK_CONFIG["available_models"],
-                        "api_available": llm_config.is_api_available(),
-                        "organization": config_data.get("organization", "Merck R&D")
+                        "provider": "Ollama (Local)",
+                        "model": config_data.get("ollama_model", "llama3.2"),
+                        "base_url": config_data.get("ollama_base_url", "http://localhost:11434"),
+                        "api_available": True  # Assume True if configured
                     }
                 else:
-                    return {"error": "Merck LLM configuration not available"}
+                    return {
+                        "provider": "Anthropic",
+                        "model": config_data.get("claude_model", "claude-sonnet-4-5-20250514"),
+                        "temperature": config_data.get("claude_temperature", 0.7),
+                        "max_tokens": config_data.get("claude_max_tokens", 8192),
+                        "api_available": bool(config_data.get("anthropic_api_key"))
+                    }
+                
+            elif profile_name == "merck":
+                return {
+                    "provider": "Anthropic (Consolidated)",
+                    "model": "claude-sonnet-4-5-20250514",
+                    "api_available": bool(os.getenv("ANTHROPIC_API_KEY")),
+                    "organization": "Merck R&D"
+                }
             
         except Exception as e:
             return {"error": f"Failed to get LLM info: {e}"}

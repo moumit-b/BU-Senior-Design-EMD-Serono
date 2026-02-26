@@ -68,21 +68,25 @@ Answer:"""
             for tool in self.tools
         ])
 
-        return f"""You are a helpful AI assistant that can query chemical compound databases.
+        return f"""You are a Pharmaceutical Research AI Agent. You MUST use tools to provide accurate, data-driven answers.
 
-Available tools:
+AVAILABLE TOOLS:
 {tools_desc}
 
-When you need to use a tool, respond in this exact format:
+INSTRUCTIONS:
+1. If you need information, use a tool. Use this EXACT format:
 ACTION: tool_name
 INPUT: {{"parameter": "value"}}
 
-When you have the final answer, respond with:
-FINAL ANSWER: your answer here
+2. If you have enough information to answer, use this EXACT format:
+FINAL ANSWER: your complete research summary here
+
+3. DO NOT provide conversational filler. DO NOT say "I can help with that" or "Let's look into it". 
+4. If you don't use a tool, you MUST provide a FINAL ANSWER.
 
 Question: {question}
 
-Let's think step by step:"""
+Research Process (Think step-by-step):"""
 
     def _parse_action(self, text: str) -> Optional[Tuple[str, Dict[str, Any]]]:
         """Parse action and input from LLM response."""
@@ -192,15 +196,17 @@ Let's think step by step:"""
                         conversation += f"\n\n{response_text}\n\nError: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nWhat should I do next?"
                 else:
                     no_action_count += 1
-                    # If the LLM gave a substantial response without ACTION or
-                    # FINAL ANSWER markers, treat it as the final answer to
-                    # avoid looping endlessly (common with Azure OpenAI models).
-                    if no_action_count >= 2 or len(response_text.strip()) > 200:
+                    # If the LLM gave a substantial response without ACTION or 
+                    # FINAL ANSWER markers, give it ONE nudge before giving up.
+                    # This prevents 1B models from "chatting" instead of doing research.
+                    if no_action_count >= 2:
                         return {
                             "output": response_text.strip(),
                             "intermediate_steps": intermediate_steps
                         }
-                    conversation += f"\n\n{response_text}\n\nPlease either use a tool with ACTION/INPUT format or provide a FINAL ANSWER."
+                    
+                    # If it's the first non-compliant response, nudge it to use the format
+                    conversation += f"\n\n{response_text}\n\nERROR: You did not follow the required ACTION/INPUT format or provide a FINAL ANSWER. Please use a tool to research the question."
 
             # If we exhausted iterations but got tool results, synthesize them
             if intermediate_steps:

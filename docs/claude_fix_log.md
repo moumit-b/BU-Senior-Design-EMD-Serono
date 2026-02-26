@@ -66,6 +66,17 @@ these markers. When this happens:
 3. Re-enabled `biomcp` in `streamlit-app/config.py`.
 4. Users can now set `BIOMCP_DISABLE_SSL=true` in their `.env` to bypass these errors on corporate networks.
 
+### 6. System Unification to Anthropic Models (HIGH)
+**Symptom**: Maintaining multiple LLM providers (Azure, Bedrock, Ollama, Anthropic) created architectural complexity and inconsistent tool-calling behavior across different user profiles.
+
+**Root cause**: Different LLMs (especially smaller local ones or different Azure deployments) have varying levels of compliance with the `ACTION/INPUT` format, leading to frequent failures in the research loop.
+
+**Fix**: Consolidated the system to use Anthropic Claude 3.5 Sonnet as the unified research engine for all profiles.
+1. Updated `llm_factory.py` to simplify initialization.
+2. Updated `config_manager.py` to point the Merck profile to the Anthropic engine.
+3. Updated UI and documentation to reflect the single API key requirement (`ANTHROPIC_API_KEY`).
+4. Kept Ollama as an optional local fallback for simple testing, but removed it from the primary research path.
+
 ---
 
 ## What Was NOT Broken

@@ -43,5 +43,8 @@ node_modules/
 # MCP old backup
 streamlit-app/mcp_old_backup/
 
-# Windows artifacts
-nul
+# Model pricing and comparison
+geminiModelPricing.md
+rateLimits.md
+LLM_COMPARISON*.md
+BUDGET*.md

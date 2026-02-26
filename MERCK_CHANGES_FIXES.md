@@ -69,6 +69,16 @@ Missing entries for runtime data files, `node_modules`, and Windows artifacts.
 **What changed**: `.gitignore`
 - Added `streamlit-app/data/`, `*.db`, `node_modules/`, `nul`
 
+### 6. Unified Model Infrastructure (HIGH)
+
+To ensure maximum reliability and simplify deployment, the system has been consolidated to use Anthropic Claude 3.5 Sonnet for ALL research profiles (Standard and Merck Enterprise).
+
+**What changed**: `streamlit-app/utils/llm_factory.py`, `streamlit-app/config_manager.py`, `streamlit-app/app.py`
+- Removed complex Azure OpenAI and AWS Bedrock initialization logic.
+- Standardized all profiles to use the unified `ChatAnthropic` engine.
+- Both "Standard" and "Merck Enterprise" profiles now use `ANTHROPIC_API_KEY`.
+- This ensures the same high-tier research quality and tool-calling reliability across the entire platform.
+
 ---
 
 ## Files Changed (full list)
@@ -78,10 +88,12 @@ Missing entries for runtime data files, `node_modules`, and Windows artifacts.
 | `streamlit-app/agent.py` | Fix agent loop: early-exit on substantive LLM responses |
 | `streamlit-app/requirements.txt` | Comment out optional deps that block pip install |
 | `streamlit-app/config.py` | Re-enable BioMCP with SSL fix wrapper |
+| `streamlit-app/utils/llm_factory.py` | Unified LLM engine focusing on Anthropic models |
+| `streamlit-app/config_manager.py` | Simplified profile management for Merck/Standard |
 | `servers/bio/run_biomcp.py` | Wrapper to handle SSL certificate bypass for BioMCP |
 | `servers/bio/_biomcp_no_ssl.py` | Patch script to monkeypatch BioMCP SSL |
-| `streamlit-app/.env.example` | Update to reflect Anthropic/Azure as primary configs and add BioMCP SSL toggle |
-| `.gitignore` | Add runtime data, node_modules, Windows artifacts |
+| `streamlit-app/.env.example` | Update to reflect Anthropic as the unified LLM provider |
+| `.gitignore` | Add runtime data, node_modules, Windows artifacts, and pricing docs |
 | `docs/claude_fix_log.md` | Detailed fix log with root cause analysis |
 | `MERCK_CHANGES_FIXES.md` | This file |
 

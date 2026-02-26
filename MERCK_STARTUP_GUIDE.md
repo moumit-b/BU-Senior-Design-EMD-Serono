@@ -1,6 +1,6 @@
 # Merck Startup Guide & Research Intelligence Workflow
 
-This guide provides specialized instructions for Merck users to run the Agentic Platform and generate Research Intelligence reports using Merck's Azure OpenAI infrastructure.
+This guide provides specialized instructions for Merck users to run the Agentic Platform and generate Research Intelligence reports using the unified Anthropic Claude infrastructure.
 
 ---
 
@@ -18,8 +18,8 @@ git checkout fix/merck-changes
 Create or edit `streamlit-app/.env` and set the following:
 
 ```bash
-# Merck Azure OpenAI Key
-AZURE_OPENAI_API_KEY=your_merck_key_here
+# Unified Anthropic API Key (Standard for all research profiles)
+ANTHROPIC_API_KEY=your_anthropic_key_here
 
 # FIX: Enable BioMCP on corporate network
 BIOMCP_DISABLE_SSL=true
@@ -51,8 +51,9 @@ In the sidebar, select **"Merck Enterprise Configuration"**. Then, use a high-le
 - `Summarize recent clinical trials and publications for pembrolizumab.`
 
 ### Why it's fixed now:
-1.  **No more 90-minute hangs:** The agent now has an "Early Exit" trigger. If it gets a substantive answer from Azure OpenAI but the model forgets the specific `FINAL ANSWER` tag, the agent will now recognize it and display it immediately.
+1.  **No more 90-minute hangs:** The agent now has an "Early Exit" trigger. If it gets a substantive answer from Claude but the model forgets the specific `FINAL ANSWER` tag, the agent will now recognize it and display it immediately.
 2.  **BioMCP is Re-enabled:** By setting `BIOMCP_DISABLE_SSL=true`, the system can now reach NCBI/PubTator3 through the Merck corporate proxy without certificate errors.
+3.  **Unified Infrastructure:** We have consolidated the system to use Anthropic Claude 3.5 Sonnet for all profiles, ensuring the most reliable tool-calling and research results regardless of configuration.
 
 ---
 

@@ -21,7 +21,7 @@ except ImportError:
 except Exception:
     pass
 
-# === LLM Settings ===
+# LLM Settings
 # Using Anthropic Claude Sonnet 4.5 as the primary LLM provider
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -29,8 +29,12 @@ CLAUDE_MODEL = "claude-sonnet-4-5-20250514"
 CLAUDE_TEMPERATURE = 0.7
 CLAUDE_MAX_TOKENS = 8192
 
-# LLM Provider selection
-LLM_PROVIDER = "anthropic"
+# Ollama Settings (Local LLM)
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+# LLM Provider selection (anthropic, ollama)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 
 # MCP Server configurations
 MCP_SERVERS = {

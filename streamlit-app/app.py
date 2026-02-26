@@ -181,30 +181,40 @@ def main():
         # Configuration-specific instructions
         if selected_config == "standard":
             st.header("📋 Setup Instructions")
-            st.markdown(
-                """
-                **Required:**
-                1. Set `ANTHROPIC_API_KEY` in `.env` file
-                2. Install: `pip install -r requirements.txt`
-                
-                **API Key Format:**
-                ```
-                ANTHROPIC_API_KEY=sk-ant-api03-...
-                ```
-                """
-            )
+            provider = config_data.get("llm_provider", "anthropic")
+            if provider == "ollama":
+                st.markdown(
+                    """
+                    **Local Mode (Ollama):**
+                    1. Ensure Ollama is running (`ollama serve`)
+                    2. Model: `llama3.2` (or set `OLLAMA_MODEL`)
+                    3. No API key required for local use.
+                    """
+                )
+            else:
+                st.markdown(
+                    """
+                    **Required:**
+                    1. Set `ANTHROPIC_API_KEY` in `.env` file
+                    2. Install: `pip install -r requirements.txt`
+                    
+                    **API Key Format:**
+                    ```
+                    ANTHROPIC_API_KEY=sk-ant-api03-...
+                    ```
+                    """
+                )
         else:
             st.header("📋 Merck Setup")
             st.markdown(
                 """
-                **Required:**
-                1. Set `AZURE_OPENAI_API_KEY` or `AZURE_API_KEY`
-                2. Access to Merck's Azure OpenAI endpoint
+                **Unified Mode:**
+                1. System now uses **Anthropic Claude 3.5**
+                2. Set `ANTHROPIC_API_KEY` in your `.env`
                 
-                **Environment Variables:**
-                ```
-                AZURE_OPENAI_API_KEY=your-key-here
-                ```
+                **Branding:**
+                - Profile: `Merck Enterprise`
+                - Org: `Merck R&D`
                 """
             )
 
