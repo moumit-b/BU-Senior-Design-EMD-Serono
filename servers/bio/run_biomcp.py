@@ -46,7 +46,23 @@ if __name__ == "__main__":
     # Build environment, passing through SSL config vars
     env = os.environ.copy()
 
-    # Option 1: Custom CA certificate bundle (preferred for production)
+    # Option 1: Disable SSL verification entirely (corporate proxy workaround) - CHECK FIRST!
+    if env.get("BIOMCP_DISABLE_SSL", "").lower() == "true":
+        sys.stderr.write("[BioMCP] SSL verification disabled via BIOMCP_DISABLE_SSL\n")
+        sys.stderr.flush()
+
+        # Launch BioMCP via a tiny patch script that monkeypatches call_http
+        patch_script = os.path.join(os.path.dirname(__file__), "_biomcp_no_ssl.py")
+        result = subprocess.run(
+            [venv_python, patch_script],
+            stderr=sys.stderr,
+            stdout=sys.stdout,
+            stdin=sys.stdin,
+            env=env
+        )
+        sys.exit(result.returncode)
+
+    # Option 2: Custom CA certificate bundle (fallback for production)
     custom_cert = env.get("SSL_CERT_PATH", "")
     
     # Auto-detect Merck certificates if not explicitly set
@@ -71,8 +87,8 @@ if __name__ == "__main__":
         sys.stderr.write(f"[BioMCP] Using custom SSL cert: {custom_cert}\n")
         sys.stderr.flush()
 
-    # Option 2: Disable SSL verification entirely (corporate proxy workaround)
-    elif env.get("BIOMCP_DISABLE_SSL", "").lower() == "true":
+    # If we get here, use default SSL behavior
+    else:
         sys.stderr.write("[BioMCP] SSL verification disabled via BIOMCP_DISABLE_SSL\n")
         sys.stderr.flush()
 
