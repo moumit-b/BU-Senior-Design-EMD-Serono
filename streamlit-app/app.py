@@ -45,7 +45,7 @@ def load_configuration_data(config_name: str):
 
 
 @st.cache_resource
-def initialize_agent_with_config(config_name: str):
+def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
     """Initialize the MCP agent with tools from configured servers and selected config."""
     with st.spinner("Initializing agent..."):
         try:
