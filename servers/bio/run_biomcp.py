@@ -18,27 +18,56 @@ import os
 import subprocess
 
 if __name__ == "__main__":
-    # Get the path to the venv python interpreter
-    venv_python = os.path.join(
+    # Get the path to the venv python interpreter (cross-platform)
+    venv_dir = os.path.join(
         os.path.dirname(__file__),
         '..',
         '..',
         'streamlit-app',
-        'venv',
-        'Scripts',
-        'python.exe'
+        'venv'
     )
+    
+    # Cross-platform venv python path detection
+    if os.name == 'nt':  # Windows
+        venv_python = os.path.join(venv_dir, 'Scripts', 'python.exe')
+    else:  # macOS/Linux
+        venv_python = os.path.join(venv_dir, 'bin', 'python')
 
     # Normalize the path
     venv_python = os.path.normpath(venv_python)
+    
+    # Verify the python executable exists
+    if not os.path.isfile(venv_python):
+        sys.stderr.write(f"[BioMCP] Error: Python executable not found at {venv_python}\n")
+        sys.stderr.write(f"[BioMCP] Please check your virtual environment setup.\n")
+        sys.stderr.flush()
+        sys.exit(1)
 
     # Build environment, passing through SSL config vars
     env = os.environ.copy()
 
     # Option 1: Custom CA certificate bundle (preferred for production)
     custom_cert = env.get("SSL_CERT_PATH", "")
+    
+    # Auto-detect Merck certificates if not explicitly set
+    if not custom_cert:
+        # Look for combined certificate file in certs directory
+        possible_certs = [
+            os.path.join(os.path.dirname(__file__), '..', '..', 'streamlit-app', 'certs', 'merck_group_combined_cert.crt'),
+            os.path.join(os.path.dirname(__file__), '..', '..', 'streamlit-app', 'certs', 'certs.pem'),
+            os.path.join(os.path.dirname(__file__), '..', '..', 'streamlit-app', 'certs', 'ssldecrypt2022.pem')
+        ]
+        
+        for cert_path in possible_certs:
+            if os.path.isfile(cert_path):
+                custom_cert = os.path.abspath(cert_path)
+                sys.stderr.write(f"[BioMCP] Auto-detected SSL cert: {custom_cert}\n")
+                break
+    
     if custom_cert and os.path.isfile(custom_cert):
         env["SSL_CERT_FILE"] = custom_cert
+        env["REQUESTS_CA_BUNDLE"] = custom_cert
+        env["CURL_CA_BUNDLE"] = custom_cert
         sys.stderr.write(f"[BioMCP] Using custom SSL cert: {custom_cert}\n")
         sys.stderr.flush()
 
