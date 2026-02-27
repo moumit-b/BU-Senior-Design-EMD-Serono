@@ -6,6 +6,7 @@ Supports both standard config.py and Merck-specific config_merck.py.
 """
 
 import importlib
+import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
