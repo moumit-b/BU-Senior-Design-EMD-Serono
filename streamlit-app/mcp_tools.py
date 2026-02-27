@@ -165,6 +165,9 @@ class MCPToolWrapper:
         return langchain_tools
 
 
+# Global storage for active MCP wrappers to keep connections alive
+_active_wrappers = {}
+
 async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> List[Tool]:
     """
     Initialize MCP servers and return LangChain tools.
@@ -181,6 +184,15 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
         return []
 
     all_tools = []
+    global _active_wrappers
+    
+    # Clear any existing connections first
+    for wrapper in _active_wrappers.values():
+        try:
+            await wrapper.disconnect()
+        except:
+            pass
+    _active_wrappers.clear()
 
     for server_name, config in servers_config.items():
         print(f"Connecting to MCP server: {server_name}...")
@@ -190,6 +202,10 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
             await wrapper.connect()
             tools = wrapper.get_langchain_tools()
             all_tools.extend(tools)
+            
+            # Store the wrapper to keep the connection alive
+            _active_wrappers[server_name] = wrapper
+            
             print(f"✓ Connected to {server_name}, loaded {len(tools)} tools")
         except Exception as e:
             print(f"✗ Failed to connect to {server_name}: {str(e)}")
@@ -198,8 +214,5 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
                 await wrapper.disconnect()
             except:
                 pass  # Ignore cleanup errors
-            # Don't print full traceback for cleaner output
-            # import traceback
-            # traceback.print_exc()
 
     return all_tools
