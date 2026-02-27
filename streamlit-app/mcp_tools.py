@@ -128,17 +128,30 @@ class MCPToolWrapper:
                         # Try to extract simple key-value
                         args_dict = {"query": arguments}
 
-                    # Run the async call - always use a new event loop in a thread for Streamlit
+                    # Handle async execution more robustly for Streamlit
                     try:
                         import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            future = executor.submit(
-                                lambda: asyncio.run(wrapper_instance.call_tool(name, args_dict))
-                            )
+                        import threading
+                        
+                        def run_async_tool():
+                            # Create a new event loop in the thread
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            try:
+                                return loop.run_until_complete(wrapper_instance.call_tool(name, args_dict))
+                            finally:
+                                loop.close()
+                        
+                        # Use thread pool to isolate the async execution
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                            future = executor.submit(run_async_tool)
                             result = future.result(timeout=60)
                             return result
+                            
+                    except concurrent.futures.TimeoutError:
+                        return f"Tool {name} timed out after 60 seconds"
                     except Exception as e:
-                        return f"Error executing tool: {str(e)}"
+                        return f"Error executing tool {name}: {str(e)}"
 
                 return tool_func
 

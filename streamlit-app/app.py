@@ -1,4 +1,4 @@
-"""
+
 Streamlit MCP Agent Application
 
 A configurable application that supports multiple LLM providers:
@@ -26,7 +26,7 @@ st.set_page_config(
 def get_selected_configuration():
     """Get the selected configuration from session state or default."""
     if "selected_config" not in st.session_state:
-        st.session_state.selected_config = "standard"
+        st.session_state.selected_config = "merck"  # Default to Merck Enterprise
     return st.session_state.selected_config
 
 
@@ -126,7 +126,7 @@ def main():
             "Select Configuration:",
             options=list(profile_options.keys()),
             format_func=lambda x: profile_options[x],
-            index=0 if get_selected_configuration() == "standard" else 1,
+            index=1 if get_selected_configuration() == "merck" else 0,
             help="Choose between standard open-source or Merck enterprise configuration"
         )
         
@@ -153,6 +153,60 @@ def main():
                 st.markdown(f"**Model:** {llm_validation.get('model', 'N/A')}")
                 if "organization" in llm_validation:
                     st.markdown(f"**Organization:** {llm_validation['organization']}")
+                    
+                # Model selection for Merck configuration
+                if selected_config == "merck" and "available_models" in config_data:
+                    available_models = config_data.get("available_models", [])
+                    current_model = config_data.get("primary_model", "gpt-4o")
+                    
+                    if available_models:
+                        st.markdown("**Model Selection:**")
+                        # Get model categorization
+                        azure_models = config_data.get("azure_models", [])
+                        bedrock_models = config_data.get("bedrock_models", [])
+                        
+                        # Create formatted model options showing provider
+                        model_options = []
+                        for model in available_models:
+                            if model in azure_models:
+                                model_options.append(f"🔵 Azure: {model}")
+                            elif model in bedrock_models:
+                                model_options.append(f"🟠 Bedrock: {model}")
+                            else:
+                                model_options.append(model)
+                        
+                        # Find current selection
+                        current_index = 0
+                        for i, model in enumerate(available_models):
+                            if model == current_model:
+                                current_index = i
+                                break
+                        
+                        selected_index = st.selectbox(
+                            "Choose Model (Azure OpenAI or AWS Bedrock):",
+                            options=range(len(model_options)),
+                            format_func=lambda x: model_options[x],
+                            index=current_index,
+                            help="Select the model to use for queries. Azure OpenAI (GPT models) or AWS Bedrock (Claude models)"
+                        )
+                        
+                        selected_model = available_models[selected_index]
+                        
+                        # Update config_data if model changed
+                        if selected_model != current_model:
+                            config_data["primary_model"] = selected_model
+                            st.session_state[f"config_data_{selected_config}"] = config_data
+                            # Clear cached agent to force reinitialization with new model
+                            st.cache_resource.clear()
+                            
+                            # Show which provider is being used
+                            if selected_model in azure_models:
+                                st.info(f"🔵 Switched to Azure OpenAI: {selected_model}")
+                            elif selected_model in bedrock_models:
+                                st.info(f"🟠 Switched to AWS Bedrock: {selected_model}")
+                            else:
+                                st.info(f"Model changed to: {selected_model}")
+                            
             else:
                 st.error("❌ LLM Not Ready")
                 for error in llm_validation.get("errors", []):
@@ -267,7 +321,9 @@ def main():
         st.title("🧪 MCP Agent - Pharmaceutical Research")
 
     # Initialize agent with selected configuration
-    agent = initialize_agent_with_config(selected_config)
+    import time
+    cache_buster = str(int(time.time() // 300))  # Change every 5 minutes to force fresh agent
+    agent = initialize_agent_with_config(selected_config, cache_buster)
 
     if agent is None:
         st.error("Failed to initialize agent. Please check your configuration.")

@@ -73,20 +73,22 @@ Answer:"""
 AVAILABLE TOOLS:
 {tools_desc}
 
-INSTRUCTIONS:
-1. If you need information, use a tool. Use this EXACT format:
+CRITICAL INSTRUCTIONS:
+1. ONLY use tools from the AVAILABLE TOOLS list above
+2. DO NOT use "think" or any other tools not listed above
+3. To use a tool, use this EXACT format:
 ACTION: tool_name
 INPUT: {{"parameter": "value"}}
 
-2. If you have enough information to answer, use this EXACT format:
+4. When you have enough information, use this EXACT format:
 FINAL ANSWER: your complete research summary here
 
-3. DO NOT provide conversational filler. DO NOT say "I can help with that" or "Let's look into it". 
-4. If you don't use a tool, you MUST provide a FINAL ANSWER.
+5. DO NOT provide conversational filler or reasoning steps
+6. Start with a tool call to gather information, then provide FINAL ANSWER
 
 Question: {question}
 
-Research Process (Think step-by-step):"""
+Begin by selecting an appropriate tool from the available list:"""
 
     def _parse_action(self, text: str) -> Optional[Tuple[str, Dict[str, Any]]]:
         """Parse action and input from LLM response."""
@@ -177,6 +179,12 @@ Research Process (Think step-by-step):"""
                     no_action_count = 0
                     action_name, action_input = action_result
 
+                    # Special handling for "think" tool attempts
+                    if action_name.lower() == "think":
+                        error_msg = f"ERROR: 'think' is not a valid tool. You must use one of the available tools: {', '.join(self.tools_dict.keys())}. Please select an actual tool to gather information."
+                        conversation += f"\n\n{response_text}\n\n{error_msg}\n\nSelect a real tool from the available list:"
+                        continue
+
                     if action_name in self.tools_dict:
                         tool = self.tools_dict[action_name]
                         try:
@@ -191,9 +199,17 @@ Research Process (Think step-by-step):"""
                             conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
                         except Exception as e:
                             observation = f"Error executing tool: {str(e)}"
-                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
+                            intermediate_steps.append((
+                                type('Action', (), {
+                                    'tool': action_name,
+                                    'tool_input': action_input
+                                })(),
+                                observation
+                            ))
+                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nPlease try a different approach or provide a FINAL ANSWER."
                     else:
-                        conversation += f"\n\n{response_text}\n\nError: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nWhat should I do next?"
+                        error_msg = f"Error: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nPlease use ONLY the tools listed above."
+                        conversation += f"\n\n{response_text}\n\n{error_msg}\n\nSelect a valid tool:"
                 else:
                     no_action_count += 1
                     # If the LLM gave a substantial response without ACTION or 

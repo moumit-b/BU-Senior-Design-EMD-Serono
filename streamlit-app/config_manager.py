@@ -85,17 +85,28 @@ class ConfigurationManager:
                 }
                 
             elif profile_name == "merck":
-                # Merck profile now uses Anthropic as well for simplicity
-                # This keeps the Merck branding/organization but uses the unified engine
+                # Merck profile uses Azure OpenAI and AWS Bedrock infrastructure
                 system_config = getattr(config_module, 'SYSTEM_CONFIG', {})
+                merck_llm_config = getattr(config_module, 'MerckLLMConfig', None)
+                
+                # Combine Azure OpenAI and AWS Bedrock models
+                azure_models = merck_llm_config.AZURE_OPENAI_CONFIG["available_models"] if merck_llm_config else []
+                bedrock_models = merck_llm_config.AWS_BEDROCK_CONFIG["available_models"] if merck_llm_config else []
+                all_models = azure_models + bedrock_models
                 
                 config_data = {
                     "profile": profile,
                     "organization": system_config.get('organization', 'Merck R&D'),
                     "system_name": system_config.get('system_name', 'Agentic Platform'),
                     "environment": system_config.get('environment', 'production'),
-                    "claude_model": "claude-sonnet-4-5-20250514", # Standardize on Sonnet 4.5
-                    "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
+                    "merck_llm_config": merck_llm_config,
+                    "azure_endpoint": merck_llm_config.AZURE_OPENAI_CONFIG["azure_endpoint"] if merck_llm_config else "",
+                    "bedrock_base_url": merck_llm_config.AWS_BEDROCK_CONFIG["base_url"] if merck_llm_config else "",
+                    "primary_model": "gpt-4o",  # Default to Azure OpenAI model
+                    "api_key": merck_llm_config.get_api_key() if merck_llm_config else "",
+                    "available_models": all_models,
+                    "azure_models": azure_models,
+                    "bedrock_models": bedrock_models,
                 }
             
             self._current_profile = profile_name
@@ -151,10 +162,12 @@ class ConfigurationManager:
                 validation["llm_ready"] = bool(api_key)
                 
             elif profile_name == "merck":
-                # Validate Merck setup - now requires Anthropic API key as well
-                api_key = os.getenv("ANTHROPIC_API_KEY")
+                # Validate Merck setup - uses Azure OpenAI API key
+                api_key = config_data.get("api_key")
                 validation["api_key_available"] = bool(api_key)
                 validation["llm_ready"] = bool(api_key)
+                validation["azure_endpoint"] = config_data.get("azure_endpoint", "")
+                validation["primary_model"] = config_data.get("primary_model", "gpt-4o")
             
             return validation
             
@@ -201,9 +214,11 @@ class ConfigurationManager:
                 
             elif profile_name == "merck":
                 return {
-                    "provider": "Anthropic (Consolidated)",
-                    "model": "claude-sonnet-4-5-20250514",
-                    "api_available": bool(os.getenv("ANTHROPIC_API_KEY")),
+                    "provider": "Azure OpenAI",
+                    "model": config_data.get("primary_model", "gpt-4o"),
+                    "azure_endpoint": config_data.get("azure_endpoint", ""),
+                    "api_available": bool(config_data.get("api_key")),
+                    "available_models": config_data.get("available_models", []),
                     "organization": "Merck R&D"
                 }
             

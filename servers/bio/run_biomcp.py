@@ -45,6 +45,25 @@ if __name__ == "__main__":
 
     # Build environment, passing through SSL config vars
     env = os.environ.copy()
+    
+    # Load environment variables from .env file if available
+    try:
+        from dotenv import load_dotenv
+        from pathlib import Path
+        env_path = Path(__file__).parent / '..' / '..' / 'streamlit-app' / '.env'
+        if env_path.exists():
+            # Load .env into a temp dict and merge with current env
+            temp_env = {}
+            load_dotenv(dotenv_path=env_path, override=True, interpolate=True)
+            # Get the value after loading
+            biomcp_disable = os.getenv("BIOMCP_DISABLE_SSL", "")
+            if biomcp_disable:
+                env["BIOMCP_DISABLE_SSL"] = biomcp_disable
+                sys.stderr.write(f"[BioMCP] Loaded BIOMCP_DISABLE_SSL={biomcp_disable} from .env\n")
+    except ImportError:
+        pass
+    except Exception as e:
+        sys.stderr.write(f"[BioMCP] Warning: Could not load .env file: {e}\n")
 
     # Option 1: Disable SSL verification entirely (corporate proxy workaround) - CHECK FIRST!
     if env.get("BIOMCP_DISABLE_SSL", "").lower() == "true":
