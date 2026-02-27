@@ -1,4 +1,4 @@
-
+"""
 Streamlit MCP Agent Application
 
 A configurable application that supports multiple LLM providers:
@@ -90,7 +90,7 @@ def initialize_agent_with_config(config_name: str):
 
 
 def display_intermediate_steps(steps):
-    """Display the agent's reasoning process."""
+    """Display the agents reasoning process."""
     if not steps:
         return
 
