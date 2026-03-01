@@ -91,6 +91,8 @@ class MerckLLMConfig:
     def is_claude_model(cls, model: str) -> bool:
         """Check if model is AWS Bedrock Claude"""
         return model in cls.AWS_BEDROCK_CONFIG["available_models"]
+
+
 # System-wide configuration
 SYSTEM_CONFIG = {
     "organization": "Merck R&D",
