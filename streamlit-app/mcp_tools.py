@@ -128,17 +128,30 @@ class MCPToolWrapper:
                         # Try to extract simple key-value
                         args_dict = {"query": arguments}
 
-                    # Run the async call - always use a new event loop in a thread for Streamlit
+                    # Handle async execution more robustly for Streamlit
                     try:
                         import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            future = executor.submit(
-                                lambda: asyncio.run(wrapper_instance.call_tool(name, args_dict))
-                            )
+                        import threading
+                        
+                        def run_async_tool():
+                            # Create a new event loop in the thread
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            try:
+                                return loop.run_until_complete(wrapper_instance.call_tool(name, args_dict))
+                            finally:
+                                loop.close()
+                        
+                        # Use thread pool to isolate the async execution
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                            future = executor.submit(run_async_tool)
                             result = future.result(timeout=60)
                             return result
+                            
+                    except concurrent.futures.TimeoutError:
+                        return f"Tool {name} timed out after 60 seconds"
                     except Exception as e:
-                        return f"Error executing tool: {str(e)}"
+                        return f"Error executing tool {name}: {str(e)}"
 
                 return tool_func
 
@@ -151,6 +164,9 @@ class MCPToolWrapper:
 
         return langchain_tools
 
+
+# Global storage for active MCP wrappers to keep connections alive
+_active_wrappers = {}
 
 async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> List[Tool]:
     """
@@ -168,6 +184,15 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
         return []
 
     all_tools = []
+    global _active_wrappers
+    
+    # Clear any existing connections first
+    for wrapper in _active_wrappers.values():
+        try:
+            await wrapper.disconnect()
+        except:
+            pass
+    _active_wrappers.clear()
 
     for server_name, config in servers_config.items():
         print(f"Connecting to MCP server: {server_name}...")
@@ -177,6 +202,10 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
             await wrapper.connect()
             tools = wrapper.get_langchain_tools()
             all_tools.extend(tools)
+            
+            # Store the wrapper to keep the connection alive
+            _active_wrappers[server_name] = wrapper
+            
             print(f"✓ Connected to {server_name}, loaded {len(tools)} tools")
         except Exception as e:
             print(f"✗ Failed to connect to {server_name}: {str(e)}")
@@ -185,8 +214,5 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
                 await wrapper.disconnect()
             except:
                 pass  # Ignore cleanup errors
-            # Don't print full traceback for cleaner output
-            # import traceback
-            # traceback.print_exc()
 
     return all_tools
