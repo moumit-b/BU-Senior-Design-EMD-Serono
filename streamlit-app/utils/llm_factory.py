@@ -34,14 +34,17 @@ def get_llm_from_config(
             return _get_anthropic_llm(config_data, temperature, max_tokens, model_override)
     
     elif profile.name == "merck":
-        # For Merck enterprise configuration, check if model is Azure or Bedrock
+        # For Merck enterprise configuration, check if model is Azure, Bedrock, or Anthropic
         model_name = model_override or config_data.get("primary_model", "gpt-4o")
         
         # Determine provider based on model name
         azure_models = config_data.get("azure_models", [])
         bedrock_models = config_data.get("bedrock_models", [])
         
-        if model_name in bedrock_models:
+        # Check if it's an Anthropic Claude model first (for unified research engine)
+        if "claude" in model_name.lower() and model_name not in bedrock_models:
+            return _get_anthropic_llm(config_data, temperature, max_tokens, model_override)
+        elif model_name in bedrock_models:
             return _get_bedrock_llm(config_data, temperature, max_tokens, model_override)
         else:
             return _get_azure_openai_llm(config_data, temperature, max_tokens, model_override)
@@ -66,12 +69,17 @@ def _get_anthropic_llm(
             "Install with: pip install langchain-anthropic"
         )
 
-    # Use ANTHROPIC_API_KEY for all profiles now
-    api_key = config_data.get("anthropic_api_key") or os.getenv("ANTHROPIC_API_KEY")
+    # Use ANTHROPIC_API_KEY for all profiles, with Merck-specific fallbacks
+    api_key = (
+        config_data.get("anthropic_api_key") or 
+        os.getenv("ANTHROPIC_API_KEY") or 
+        os.getenv("AZURE_OPENAI_API_KEY") or 
+        os.getenv("AZURE_API_KEY")
+    )
 
     if not api_key:
         raise ValueError(
-            "ANTHROPIC_API_KEY is not set. Please set it in your .env file."
+            "API key is not set. Please set ANTHROPIC_API_KEY or AZURE_OPENAI_API_KEY in your .env file."
         )
 
     model = model_override or config_data.get("claude_model", "claude-sonnet-4-5-20250514")

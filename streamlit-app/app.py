@@ -66,10 +66,15 @@ def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
             tools = []
             if mcp_servers:
                 try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    tools = loop.run_until_complete(initialize_mcp_tools(mcp_servers))
-                    loop.close()
+                    from mcp_tools import get_mcp_loop
+                    loop = get_mcp_loop()
+                    
+                    # Run initialize_mcp_tools in the background loop
+                    future = asyncio.run_coroutine_threadsafe(
+                        initialize_mcp_tools(mcp_servers),
+                        loop
+                    )
+                    tools = future.result(timeout=60)
 
                     if tools:
                         st.info(f"Connected to MCP servers, loaded {len(tools)} tools")

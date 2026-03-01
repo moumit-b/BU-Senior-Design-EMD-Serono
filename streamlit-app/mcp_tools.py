@@ -3,6 +3,7 @@ MCP Tools module - Connects to MCP servers and exposes their tools to LangChain.
 """
 
 import asyncio
+import threading
 from typing import List, Dict, Any, Optional
 import json
 
@@ -18,6 +19,25 @@ except ImportError:
 # Import LangChain Tool
 from langchain_core.tools import Tool
 from pydantic import BaseModel, Field
+
+
+# Global storage for the background event loop
+_mcp_loop: Optional[asyncio.AbstractEventLoop] = None
+_mcp_thread: Optional[threading.Thread] = None
+
+def _start_background_loop(loop: asyncio.AbstractEventLoop):
+    """Run the event loop in a background thread."""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+def get_mcp_loop() -> asyncio.AbstractEventLoop:
+    """Get or create the global background event loop for MCP operations."""
+    global _mcp_loop, _mcp_thread
+    if _mcp_loop is None:
+        _mcp_loop = asyncio.new_event_loop()
+        _mcp_thread = threading.Thread(target=_start_background_loop, args=(_mcp_loop,), daemon=True)
+        _mcp_thread.start()
+    return _mcp_loop
 
 
 class MCPToolWrapper:
@@ -36,9 +56,12 @@ class MCPToolWrapper:
         self.write_stream = None
         self._tools_cache: List[Any] = []
         self._context_manager = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def connect(self):
         """Establish connection to the MCP server."""
+        self._loop = asyncio.get_running_loop()
+        
         server_params = StdioServerParameters(
             command=self.server_config["command"],
             args=self.server_config["args"]
@@ -62,10 +85,19 @@ class MCPToolWrapper:
     async def disconnect(self):
         """Close the MCP server connection."""
         if self.session:
-            await self.session.__aexit__(None, None, None)
+            try:
+                await self.session.__aexit__(None, None, None)
+            except:
+                pass
 
         if self._context_manager:
-            await self._context_manager.__aexit__(None, None, None)
+            try:
+                await self._context_manager.__aexit__(None, None, None)
+            except:
+                pass
+        
+        self.session = None
+        self._context_manager = None
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """
@@ -115,7 +147,7 @@ class MCPToolWrapper:
             tool_description = mcp_tool.description or "No description available"
 
             # Create a closure to capture the tool_name and self
-            def make_tool_func(name: str, wrapper_instance):
+            def make_tool_func(name: str, wrapper_instance: 'MCPToolWrapper'):
                 def tool_func(arguments: str) -> str:
                     """Execute the MCP tool."""
                     try:
@@ -128,27 +160,18 @@ class MCPToolWrapper:
                         # Try to extract simple key-value
                         args_dict = {"query": arguments}
 
-                    # Handle async execution more robustly for Streamlit
+                    # Use run_coroutine_threadsafe to execute call_tool in the background loop
+                    if not wrapper_instance._loop:
+                        return f"Error: MCP wrapper loop not initialized for tool {name}"
+                    
                     try:
-                        import concurrent.futures
-                        import threading
-                        
-                        def run_async_tool():
-                            # Create a new event loop in the thread
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            try:
-                                return loop.run_until_complete(wrapper_instance.call_tool(name, args_dict))
-                            finally:
-                                loop.close()
-                        
-                        # Use thread pool to isolate the async execution
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                            future = executor.submit(run_async_tool)
-                            result = future.result(timeout=60)
-                            return result
-                            
-                    except concurrent.futures.TimeoutError:
+                        future = asyncio.run_coroutine_threadsafe(
+                            wrapper_instance.call_tool(name, args_dict),
+                            wrapper_instance._loop
+                        )
+                        # Wait for the result with a timeout
+                        return future.result(timeout=60)
+                    except TimeoutError:
                         return f"Tool {name} timed out after 60 seconds"
                     except Exception as e:
                         return f"Error executing tool {name}: {str(e)}"
@@ -187,7 +210,7 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
     global _active_wrappers
     
     # Clear any existing connections first
-    for wrapper in _active_wrappers.values():
+    for wrapper in list(_active_wrappers.values()):
         try:
             await wrapper.disconnect()
         except:
