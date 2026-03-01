@@ -19,6 +19,8 @@ Create or edit `streamlit-app/.env` and set the following:
 
 ```bash
 # Unified Anthropic API Key (Standard for all research profiles)
+# Note: You can also use AZURE_OPENAI_API_KEY or AZURE_API_KEY as a fallback 
+# if you are routing through the Merck proxy.
 ANTHROPIC_API_KEY=your_anthropic_key_here
 
 # FIX: Enable BioMCP on corporate network
@@ -51,9 +53,10 @@ In the sidebar, select **"Merck Enterprise Configuration"**. Then, use a high-le
 - `Summarize recent clinical trials and publications for pembrolizumab.`
 
 ### Why it's fixed now:
-1.  **No more 90-minute hangs:** The agent now has an "Early Exit" trigger. If it gets a substantive answer from Claude but the model forgets the specific `FINAL ANSWER` tag, the agent will now recognize it and display it immediately.
-2.  **BioMCP is Re-enabled:** By setting `BIOMCP_DISABLE_SSL=true`, the system can now reach NCBI/PubTator3 through the Merck corporate proxy without certificate errors.
-3.  **Unified Infrastructure:** We have consolidated the system to use Anthropic Claude 3.5 Sonnet for all profiles, ensuring the most reliable tool-calling and research results regardless of configuration.
+1.  **No more Event Loop Hangs:** The application no longer freezes during tool execution. A robust background event loop was implemented to handle continuous MCP tool calls properly, resolving the "technical issue with the event loop" error.
+2.  **No more 90-minute hangs:** The agent now has an "Early Exit" trigger. If it gets a substantive answer from Claude but the model forgets the specific `FINAL ANSWER` tag, the agent will now recognize it and display it immediately.
+3.  **BioMCP is Re-enabled:** By setting `BIOMCP_DISABLE_SSL=true`, the system can now reach NCBI/PubTator3 through the Merck corporate proxy without certificate errors.
+4.  **Unified Infrastructure:** We have consolidated the system to support Anthropic Claude models seamlessly. You can now select Claude models directly within the Merck profile, and the system accepts either `ANTHROPIC_API_KEY` or `AZURE_OPENAI_API_KEY`.
 
 ---
 

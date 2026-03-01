@@ -79,6 +79,23 @@ To ensure maximum reliability and simplify deployment, the system has been conso
 - Both "Standard" and "Merck Enterprise" profiles now use `ANTHROPIC_API_KEY`.
 - This ensures the same high-tier research quality and tool-calling reliability across the entire platform.
 
+### 7. Event Loop Hang During Tool Execution (CRITICAL)
+
+When the agent attempted to execute MCP tools, the application would hang and return a "technical issue with the event loop" error. This was caused by attempting to use an `asyncio` event loop across different threads.
+
+**What changed**: `streamlit-app/mcp_tools.py`, `streamlit-app/app.py`
+- Implemented a persistent, dedicated background thread for the `asyncio` event loop.
+- Updated `initialize_mcp_tools` and `call_tool` to securely dispatch coroutines to this background loop using `asyncio.run_coroutine_threadsafe`.
+- Tool execution is now thread-safe and stable.
+
+### 8. Enhanced Anthropic Support in Merck Mode (MEDIUM)
+
+Merck users wanted to use Anthropic models but were often restricted by how the `llm_factory` enforced Azure/Bedrock providers under the Merck profile.
+
+**What changed**: `streamlit-app/utils/llm_factory.py`
+- Enabled routing to `_get_anthropic_llm` when a Claude model is selected and it isn't strictly defined as a Bedrock model.
+- Added `AZURE_OPENAI_API_KEY` and `AZURE_API_KEY` as fallbacks for the Anthropic provider, meaning Merck users who have only set their Azure keys can still seamlessly use Anthropic models.
+
 ---
 
 ## Files Changed (full list)
