@@ -1,0 +1,16 @@
+{
+  "name": "opentargets-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for Open Targets Platform data",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["mcp", "opentargets", "targets", "diseases"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  }
+}

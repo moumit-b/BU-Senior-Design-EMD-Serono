@@ -1,0 +1,16 @@
+{
+  "name": "duckdb-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for DuckDB SQL analytics",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["mcp", "duckdb", "sql", "analytics"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  }
+}

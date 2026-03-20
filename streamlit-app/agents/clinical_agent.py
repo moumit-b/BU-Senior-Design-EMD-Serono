@@ -39,6 +39,7 @@ class ClinicalAgent(BaseAgent):
     def _define_preferred_mcps(self) -> List[str]:
         return [
             "biomcp",     # Primary for trials and OpenFDA
+            "openfda",    # Drug approvals, adverse events, recalls
             "pubchem",    # Regulatory cross-references
             "brave",      # News updates
             "playwright"  # Dashboard access
@@ -50,7 +51,10 @@ class ClinicalAgent(BaseAgent):
             "FDA", "approval", "regulatory", "label", "indication",
             "adverse event", "safety", "recall", "shortage",
             "intervention", "sponsor", "enrollment", "endpoint",
-            "protocol", "inclusion", "exclusion", "OpenFDA"
+            "protocol", "inclusion", "exclusion", "OpenFDA",
+            "FAERS", "adverse event report", "warning letter", "side effect",
+            "contraindication", "enforcement action", "drug approval status",
+            "biomarker", "target-specific", "genetic biomarker"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:

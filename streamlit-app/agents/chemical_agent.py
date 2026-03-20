@@ -41,6 +41,7 @@ class ChemicalAgent(BaseAgent):
     def _define_preferred_mcps(self) -> List[str]:
         return [
             "pubchem",  # Primary for chemical structures
+            "opentargets",  # Drug-target interactions and mechanisms
             "chembl",   # Bioactivity data
             "biomcp",   # Cross-domain chemical data
             "brave",    # News and updates
@@ -54,7 +55,9 @@ class ChemicalAgent(BaseAgent):
             "molecular weight", "logP", "TPSA", "druglikeness",
             "bioactivity", "assay", "IC50", "EC50", "toxicity",
             "safety", "ADMET", "pharmacophore", "similarity",
-            "substructure", "patent", "synthesis"
+            "substructure", "patent", "synthesis",
+            "drug-target interaction", "target engagement", "mechanism of action",
+            "compound efficacy"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:

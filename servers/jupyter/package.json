@@ -1,0 +1,16 @@
+{
+  "name": "jupyter-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for Jupyter notebook code execution",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["mcp", "jupyter", "code", "execution"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  }
+}

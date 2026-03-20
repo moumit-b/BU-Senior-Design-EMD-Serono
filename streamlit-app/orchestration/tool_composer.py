@@ -1,6 +1,29 @@
 """
 Tool Composer - Dynamic tool composition (Novel Feature 2).
 Allows agents to create new tools by combining MCP calls.
+FDA-Specific Tool Patterns:
+- adverse_event_lookup: Search FAERS by drug name/ingredient
+- approval_status_check: Query FDA approval database by drug/active ingredient
+- recall_search: Find product recalls by drug or device
+- contraindication_finder: Get FDA-approved contraindications and warnings
+
+Open Targets-Specific Tool Patterns:
+- gene_target_validation: Validate target by gene ID/symbol with evidence
+- drug_target_interaction: Find drugs targeting a specific gene/protein
+- disease_target_association: Map disease to validated targets
+- pathway_analysis: Analyze biological pathways and target connections
+
+OmniPathDB-Specific Tool Patterns:
+- pathway_query: Get signaling pathway by gene/protein
+- ppi_lookup: Find protein-protein interactions
+- network_analysis: Build interaction networks
+- pathway_context: Get biological context for target
+
+STRING-Specific Tool Patterns:
+- protein_interaction_lookup: Get interactions by protein ID
+- network_neighborhood: Build interaction network around protein
+- interaction_evidence_score: Query interaction confidence/evidence
+- functional_similarity: Find functionally similar proteins
 """
 
 from typing import Dict, Any, List, Optional

@@ -43,7 +43,9 @@ class LiteratureAgent(BaseAgent):
             "semanticscholar",  # Semantic Scholar
             "pubchem",          # Chemical literature refs
             "brave",            # Web/news search
-            "playwright"        # Site automation
+            "playwright",       # Site automation
+            "medrxiv",          # medRxiv preprints
+            "biorxiv"           # bioRxiv preprints
         ]
 
     def _define_keywords(self) -> List[str]:

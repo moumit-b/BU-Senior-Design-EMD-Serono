@@ -1,0 +1,16 @@
+{
+  "name": "omnipathdb-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for OmniPathDB protein interactions and pathways",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["mcp", "omnipathdb", "protein", "interactions"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  }
+}

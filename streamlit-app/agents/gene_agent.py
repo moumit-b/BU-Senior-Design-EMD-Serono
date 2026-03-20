@@ -38,6 +38,9 @@ class GeneAgent(BaseAgent):
     def _define_preferred_mcps(self) -> List[str]:
         return [
             "biomcp",     # Gene/variant/disease data
+            "opentargets",  # Target validation and gene-disease associations
+            "omnipathdb",   # Pathway analysis and protein-protein interactions
+            "string",       # PPI networks and interaction evidence
             "pubchem",    # Target-compound relationships
             "playwright"  # Biology dashboards
         ]
@@ -48,7 +51,14 @@ class GeneAgent(BaseAgent):
             "mutation", "SNP", "HGVS", "chromosome", "locus",
             "pathway", "BRCA", "TP53", "EGFR", "expression",
             "druggability", "function", "ontology", "GO term",
-            "disease association", "MyGene", "UniProt"
+            "disease association", "MyGene", "UniProt",
+            "target validation", "gene-disease", "target safety",
+            "genetic association", "target engagement",
+            "protein-protein interaction", "PPI", "signaling",
+            "network", "kinase", "phosphorylation", "regulatory network",
+            "cell-cell communication", "interaction database",
+            "STRING", "interaction score", "functional similarity",
+            "confidence score", "experimental evidence", "predicted interaction"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:

@@ -30,8 +30,9 @@ CLAUDE_TEMPERATURE = 0.7
 CLAUDE_MAX_TOKENS = 8192
 
 # LLM Provider selection
-LLM_PROVIDER = "anthropic"
-
+LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or os.getenv("PROVIDER") or "anthropic").lower()
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 # MCP Server configurations
 MCP_SERVERS = {
     "pubchem": {
@@ -58,6 +59,66 @@ MCP_SERVERS = {
         "command": "node",
         "args": ["../servers/web_knowledge/index.js"],
         "description": "Web/Knowledge MCP server for Wikipedia, clinical trials, gene info, and drug information"
+    },
+    "medrxiv": {
+        "command": "node",
+        "args": ["../servers/medrxiv/index.js"],
+        "description": "medRxiv MCP server for preprint search and metadata"
+    },
+    "biorxiv": {
+        "command": "node",
+        "args": ["../servers/biorxiv/index.js"],
+        "description": "bioRxiv MCP server for biology preprint search and metadata"
+    },
+    "openfda": {
+        "command": "node",
+        "args": ["../servers/openfda/index.js"],
+        "description": "Open FDA MCP for drug approvals, adverse events, recalls, and regulatory data"
+    },
+    "opentargets": {
+        "command": "node",
+        "args": ["../servers/opentargets/index.js"],
+        "description": "Open Targets Platform MCP for gene-target-disease associations, drug mechanisms, and target validation"
+    },
+    "omnipathdb": {
+        "command": "node",
+        "args": ["../servers/omnipathdb/index.js"],
+        "description": "OmniPathDB MCP for protein-protein interactions, signaling pathways, and regulatory networks"
+    },
+    "string": {
+        "command": "node",
+        "args": ["../servers/string/index.js"],
+        "description": "STRING MCP for protein-protein interactions, network neighborhoods, and interaction evidence"
+    },
+    "brave": {
+        "command": "node",
+        "args": ["../servers/brave/index.js"],
+        "description": "Brave Search MCP for web/news search"
+    },
+    "playwright": {
+        "command": "node",
+        "args": ["../servers/playwright/index.js"],
+        "description": "Playwright MCP for web automation and dashboard access"
+    },
+    "chembl": {
+        "command": "node",
+        "args": ["../servers/chembl/index.js"],
+        "description": "ChEMBL MCP server for bioactivity and target data"
+    },
+    "semanticscholar": {
+        "command": "node",
+        "args": ["../servers/semanticscholar/index.js"],
+        "description": "Semantic Scholar MCP for citations and paper recommendations"
+    },
+    "jupyter": {
+        "command": "node",
+        "args": ["../servers/jupyter/index.js"],
+        "description": "Jupyter MCP for Python code execution and data analysis"
+    },
+    "duckdb": {
+        "command": "node",
+        "args": ["../servers/duckdb/index.js"],
+        "description": "DuckDB MCP for SQL analytics on local files"
     }
 }
 
@@ -80,39 +141,8 @@ FEATURE_FLAGS = {
 AGENT_MAX_ITERATIONS = 10
 AGENT_VERBOSE = True
 
-# Additional MCP Servers (from research)
-EXTENDED_MCP_SERVERS = {
-    "chembl": {
-        "command": "node",
-        "args": ["../servers/chembl/index.js"],
-        "description": "ChEMBL MCP server for bioactivity and target data"
-    },
-    "semanticscholar": {
-        "command": "node",
-        "args": ["../servers/semanticscholar/index.js"],
-        "description": "Semantic Scholar MCP for citations and paper recommendations"
-    },
-    "jupyter": {
-        "command": "python",
-        "args": ["-m", "jupyter_mcp"],
-        "description": "Jupyter MCP for Python code execution and data analysis"
-    },
-    "duckdb": {
-        "command": "python",
-        "args": ["-m", "duckdb_mcp"],
-        "description": "DuckDB MCP for SQL analytics on local files"
-    },
-    "brave": {
-        "command": "node",
-        "args": ["../servers/brave/index.js"],
-        "description": "Brave Search MCP for web/news search"
-    },
-    "playwright": {
-        "command": "node",
-        "args": ["../servers/playwright/index.js"],
-        "description": "Playwright MCP for web automation and dashboard access"
-    }
-}
+# Additional MCP Servers (from research) - Currently using all in MCP_SERVERS
+EXTENDED_MCP_SERVERS = {}
 
 # Governance settings (Phase 2)
 GOVERNANCE_CONFIG = {

@@ -38,6 +38,7 @@ class DataAgent(BaseAgent):
     def _define_preferred_mcps(self) -> List[str]:
         return [
             "jupyter",    # Python/pandas execution
+            "string",     # PPI network analysis
             "duckdb",     # SQL analytics
             "playwright"  # Data extraction
         ]
@@ -47,7 +48,9 @@ class DataAgent(BaseAgent):
             "analyze", "statistics", "correlation", "trend",
             "pandas", "dataframe", "SQL", "query", "aggregate",
             "mean", "median", "distribution", "visualization",
-            "plot", "chart", "compare", "calculate"
+            "plot", "chart", "compare", "calculate",
+            "network analysis", "graph topology", "degree distribution",
+            "clustering coefficient", "network neighborhood", "interaction strength"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
