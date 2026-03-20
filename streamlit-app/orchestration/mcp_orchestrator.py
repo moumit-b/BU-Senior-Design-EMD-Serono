@@ -7,6 +7,9 @@ This is the BOTTOM LAYER of dual orchestration that handles:
 - Performance tracking & learning
 - Failover and health monitoring
 - Teaching agents about data source quality (Novel Feature 1)
+
+All tool calls are now mediated through the Context Forge Gateway for
+governance, audit, and compliance (IBM Context Forge pattern).
 """
 
 import asyncio
@@ -26,6 +29,9 @@ class MCPOrchestrator:
 
     Novel Feature: Learns from agent query patterns and provides feedback
     to improve agent-MCP matching.
+
+    Gateway Integration: All tool execution now flows through the
+    ContextForgeGateway when one is attached (see ``set_gateway``).
     """
 
     def __init__(self, mcp_wrappers: Dict[str, Any]):
@@ -37,6 +43,9 @@ class MCPOrchestrator:
         """
         self.mcp_wrappers = mcp_wrappers
         self.cache = MultiLevelCache()
+
+        # Context Forge Gateway (injected after construction)
+        self._gateway = None
 
         # Performance tracking (Novel Feature 1: Bidirectional Learning)
         self.performance_data: Dict[str, MCPPerformance] = {}
@@ -56,6 +65,15 @@ class MCPOrchestrator:
                 avg_latency_ms=0,
                 query_type_performance={}
             )
+
+    def set_gateway(self, gateway):
+        """
+        Attach a ContextForgeGateway to mediate all tool calls.
+
+        Args:
+            gateway: A governance.gateway.ContextForgeGateway instance.
+        """
+        self._gateway = gateway
 
     async def route_tool_call(
         self,
@@ -106,7 +124,7 @@ class MCPOrchestrator:
         # Execute tool call with performance tracking
         start_time = time.time()
         try:
-            result = await self._call_mcp_tool(mcp_name, tool_name, params)
+            result = await self._call_mcp_tool(mcp_name, tool_name, params, context)
             latency_ms = (time.time() - start_time) * 1000
             success = result is not None
 
@@ -198,14 +216,45 @@ class MCPOrchestrator:
         self,
         mcp_name: str,
         tool_name: str,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """Call the MCP tool with retry logic."""
+        """
+        Call the MCP tool — routed through the ContextForgeGateway when available.
+
+        If no gateway is attached, falls back to direct wrapper invocation
+        (preserving backward compatibility).
+        """
+        # --- Gateway-mediated path (IBM Context Forge) ---
+        if self._gateway is not None:
+            from governance.gateway import RequestContext
+
+            ctx = context or {}
+            request_context = RequestContext(
+                user_id=ctx.get("user_id", "system"),
+                session_id=ctx.get("session_id", "default"),
+                agent_name=ctx.get("agent_id"),
+                query_text=ctx.get("query_text"),
+            )
+
+            tool_response = await self._gateway.call_tool(
+                server=mcp_name,
+                tool=tool_name,
+                parameters=params,
+                context=request_context,
+            )
+
+            if not tool_response.success:
+                raise RuntimeError(
+                    f"Gateway call failed ({mcp_name}/{tool_name}): {tool_response.error}"
+                )
+            return tool_response.result
+
+        # --- Direct path (fallback / legacy) ---
         wrapper = self.mcp_wrappers.get(mcp_name)
         if not wrapper:
             raise ValueError(f"MCP {mcp_name} not found")
 
-        # Call the tool
         result = await wrapper.call_tool(tool_name, params)
         return result
 
