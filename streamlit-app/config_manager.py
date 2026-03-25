@@ -28,7 +28,7 @@ class ConfigurationManager:
     PROFILES = {
         "standard": ConfigurationProfile(
             name="standard",
-            display_name="Standard Configuration", 
+            display_name="Standard Configuration",
             description="Open-source configuration using Anthropic Claude Sonnet 4.5",
             organization="BU Senior Design",
             module_name="config"
@@ -39,6 +39,13 @@ class ConfigurationManager:
             description="Enterprise configuration using Azure OpenAI and AWS Bedrock",
             organization="Merck R&D",
             module_name="config_merck"
+        ),
+        "ollama": ConfigurationProfile(
+            name="ollama",
+            display_name="Local Ollama Configuration",
+            description="Local LLM via Ollama (qwen3:235b-thinking, llama3, etc.) - no API key required",
+            organization="Local Development",
+            module_name="config"
         )
     }
     
@@ -79,11 +86,24 @@ class ConfigurationManager:
                     "claude_temperature": getattr(config_module, 'CLAUDE_TEMPERATURE', 0.7),
                     "claude_max_tokens": getattr(config_module, 'CLAUDE_MAX_TOKENS', 8192),
                     "ollama_base_url": getattr(config_module, 'OLLAMA_BASE_URL', 'http://localhost:11434'),
-                    "ollama_model": getattr(config_module, 'OLLAMA_MODEL', 'llama3.2'),
+                    "ollama_model": getattr(config_module, 'OLLAMA_MODEL', 'qwen3:235b-thinking'),
+                    "ollama_timeout": getattr(config_module, 'OLLAMA_TIMEOUT', 600),
                     "mcp_servers": getattr(config_module, 'MCP_SERVERS', {}),
                     "feature_flags": getattr(config_module, 'FEATURE_FLAGS', {}),
                 }
-                
+
+            elif profile_name == "ollama":
+                # Ollama local profile — uses config.py but forces provider to ollama
+                config_data = {
+                    "profile": profile,
+                    "llm_provider": "ollama",
+                    "ollama_base_url": getattr(config_module, 'OLLAMA_BASE_URL', 'http://localhost:11434'),
+                    "ollama_model": getattr(config_module, 'OLLAMA_MODEL', 'qwen3:235b-thinking'),
+                    "ollama_timeout": getattr(config_module, 'OLLAMA_TIMEOUT', 600),
+                    "mcp_servers": getattr(config_module, 'MCP_SERVERS', {}),
+                    "feature_flags": getattr(config_module, 'FEATURE_FLAGS', {}),
+                }
+
             elif profile_name == "merck":
                 # Merck profile uses Azure OpenAI and AWS Bedrock infrastructure
                 system_config = getattr(config_module, 'SYSTEM_CONFIG', {})
@@ -160,7 +180,14 @@ class ConfigurationManager:
                 api_key = config_data.get("anthropic_api_key")
                 validation["api_key_available"] = bool(api_key)
                 validation["llm_ready"] = bool(api_key)
-                
+
+            elif profile_name == "ollama":
+                # Ollama requires no API key — just a running Ollama server
+                validation["api_key_available"] = True  # Not needed
+                validation["llm_ready"] = True
+                validation["model"] = config_data.get("ollama_model", "qwen3:235b-thinking")
+                validation["base_url"] = config_data.get("ollama_base_url", "http://localhost:11434")
+
             elif profile_name == "merck":
                 # Validate Merck setup - uses Azure OpenAI API key
                 api_key = config_data.get("api_key")
@@ -199,9 +226,9 @@ class ConfigurationManager:
                 if provider == "ollama":
                     return {
                         "provider": "Ollama (Local)",
-                        "model": config_data.get("ollama_model", "llama3.2"),
+                        "model": config_data.get("ollama_model", "qwen3:235b-thinking"),
                         "base_url": config_data.get("ollama_base_url", "http://localhost:11434"),
-                        "api_available": True  # Assume True if configured
+                        "api_available": True
                     }
                 else:
                     return {
@@ -211,7 +238,15 @@ class ConfigurationManager:
                         "max_tokens": config_data.get("claude_max_tokens", 8192),
                         "api_available": bool(config_data.get("anthropic_api_key"))
                     }
-                
+
+            elif profile_name == "ollama":
+                return {
+                    "provider": "Ollama (Local)",
+                    "model": config_data.get("ollama_model", "qwen3:235b-thinking"),
+                    "base_url": config_data.get("ollama_base_url", "http://localhost:11434"),
+                    "api_available": True
+                }
+
             elif profile_name == "merck":
                 return {
                     "provider": "Azure OpenAI",

@@ -2,17 +2,22 @@
 Streamlit MCP Agent Application
 
 A configurable application that supports multiple LLM providers:
-- Standard: Anthropic Claude Sonnet 4.5 (open-source)  
+- Standard: Anthropic Claude Sonnet 4.5 (open-source)
 - Merck Enterprise: Azure OpenAI and AWS Bedrock (enterprise)
+- Ollama: Local LLM via Ollama (qwen3:235b-thinking, llama3, etc.)
+
+All MCP tool calls are mediated through the IBM Context Forge Gateway
+for governance, audit logging, compliance, and rate limiting.
 """
 
 import streamlit as st
 import asyncio
 from typing import Optional
 from agent import MCPAgent
-from mcp_tools import initialize_mcp_tools
+from mcp_tools import initialize_mcp_tools, _active_wrappers
 from config_manager import config_manager
 from utils.llm_factory import validate_llm_setup
+from governance import ContextForgeGateway
 
 
 # Page configuration
@@ -26,7 +31,7 @@ st.set_page_config(
 def get_selected_configuration():
     """Get the selected configuration from session state or default."""
     if "selected_config" not in st.session_state:
-        st.session_state.selected_config = "merck"  # Default to Merck Enterprise
+        st.session_state.selected_config = "standard"  # Default to Standard (Claude)
     return st.session_state.selected_config
 
 
@@ -46,29 +51,33 @@ def load_configuration_data(config_name: str):
 
 @st.cache_resource
 def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
-    """Initialize the MCP agent with tools from configured servers and selected config."""
+    """Initialize the MCP agent with tools from configured servers and selected config.
+
+    Context Forge Gateway is automatically initialized and registered with MCP
+    wrappers so that all tool calls flow through governance (audit, compliance,
+    rate limiting, health monitoring).
+    """
     with st.spinner("Initializing agent..."):
         try:
             # Load configuration data
             config_data = load_configuration_data(config_name)
             if not config_data:
                 return None
-            
+
             # Get MCP servers from appropriate config
-            if config_name == "standard":
+            if config_name in ("standard", "ollama"):
                 mcp_servers = config_data.get("mcp_servers", {})
             else:
                 # For Merck config, use the same MCP servers as standard config
-                # Import standard config to get MCP servers
                 import config
                 mcp_servers = getattr(config, 'MCP_SERVERS', {})
-            
+
             tools = []
             if mcp_servers:
                 try:
                     from mcp_tools import get_mcp_loop
                     loop = get_mcp_loop()
-                    
+
                     # Run initialize_mcp_tools in the background loop
                     future = asyncio.run_coroutine_threadsafe(
                         initialize_mcp_tools(mcp_servers),
@@ -78,6 +87,22 @@ def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
 
                     if tools:
                         st.info(f"Connected to MCP servers, loaded {len(tools)} tools")
+
+                    # --- Context Forge Gateway ---
+                    # Register live MCP wrappers with the governance gateway
+                    feature_flags = config_data.get("feature_flags", {})
+                    governance_enabled = feature_flags.get("use_governance_gateway", True)
+
+                    if _active_wrappers and governance_enabled:
+                        gateway = ContextForgeGateway()
+                        gateway.register_mcp_wrappers(_active_wrappers)
+                        # Store gateway in a way accessible to the rest of the app
+                        st.session_state["gateway"] = gateway
+                        st.info(
+                            f"Context Forge Gateway active: "
+                            f"{len(_active_wrappers)} MCP server(s) governed"
+                        )
+
                 except Exception as mcp_error:
                     st.warning(f"MCP servers not available: {str(mcp_error)}")
                     st.info("Running in direct LLM mode without MCP tools")
@@ -217,8 +242,8 @@ def main():
                 for error in llm_validation.get("errors", []):
                     st.error(f"• {error}")
             
-            # Show MCP servers for both configurations
-            if selected_config == "standard":
+            # Show MCP servers for all configurations
+            if selected_config in ("standard", "ollama"):
                 mcp_servers = config_data.get("mcp_servers", {})
                 if mcp_servers:
                     st.markdown("**MCP Servers:**")
@@ -236,33 +261,35 @@ def main():
                     st.markdown("**Mode:** Direct LLM (No MCP servers)")
         
         st.divider()
-        
+
         # Configuration-specific instructions
-        if selected_config == "standard":
+        if selected_config == "ollama":
+            st.header("📋 Ollama Setup")
+            st.markdown(
+                """
+                **Local Mode (Ollama):**
+                1. Install Ollama: https://ollama.com
+                2. Pull model: `ollama pull qwen3:235b-thinking`
+                3. Start server: `ollama serve`
+                4. No API key required.
+
+                **Custom model:** Set `OLLAMA_MODEL` in `.env`
+                """
+            )
+        elif selected_config == "standard":
             st.header("📋 Setup Instructions")
-            provider = config_data.get("llm_provider", "anthropic")
-            if provider == "ollama":
-                st.markdown(
-                    """
-                    **Local Mode (Ollama):**
-                    1. Ensure Ollama is running (`ollama serve`)
-                    2. Model: `llama3.2` (or set `OLLAMA_MODEL`)
-                    3. No API key required for local use.
-                    """
-                )
-            else:
-                st.markdown(
-                    """
-                    **Required:**
-                    1. Set `ANTHROPIC_API_KEY` in `.env` file
-                    2. Install: `pip install -r requirements.txt`
-                    
-                    **API Key Format:**
-                    ```
-                    ANTHROPIC_API_KEY=sk-ant-api03-...
-                    ```
-                    """
-                )
+            st.markdown(
+                """
+                **Required:**
+                1. Set `ANTHROPIC_API_KEY` in `.env` file
+                2. Install: `pip install -r requirements.txt`
+
+                **API Key Format:**
+                ```
+                ANTHROPIC_API_KEY=sk-ant-api03-...
+                ```
+                """
+            )
         else:
             st.header("📋 Merck Setup")
             st.markdown(
@@ -270,7 +297,7 @@ def main():
                 **Unified Mode:**
                 1. System now uses **Anthropic Claude 3.5**
                 2. Set `ANTHROPIC_API_KEY` in your `.env`
-                
+
                 **Branding:**
                 - Profile: `Merck Enterprise`
                 - Org: `Merck R&D`
@@ -319,6 +346,10 @@ def main():
         if profile.name == "merck":
             st.title("🧬 Merck Agentic Platform")
             st.markdown(f"**{config_data.get('system_name', 'Agentic Platform')}** - {profile.organization}")
+        elif profile.name == "ollama":
+            st.title("🧪 MCP Agent - Local Mode")
+            model_name = config_data.get("ollama_model", "qwen3:235b-thinking")
+            st.markdown(f"Running locally via **Ollama** ({model_name}) with Context Forge governance")
         else:
             st.title("🧪 MCP Agent - Pharmaceutical Research")
             st.markdown("Open-source pharmaceutical research intelligence system")
@@ -343,6 +374,21 @@ def main():
                 st.markdown(f"• `{tool}`")
         else:
             st.info("Running in direct LLM mode without MCP tools")
+
+    # Context Forge Gateway Status
+    gateway = st.session_state.get("gateway")
+    if gateway is not None:
+        with st.expander("Context Forge Governance", expanded=False):
+            stats = gateway.get_gateway_stats()
+            g1, g2, g3, g4 = st.columns(4)
+            with g1:
+                st.metric("Total Calls", stats.get("total_calls", 0))
+            with g2:
+                st.metric("Successful", stats.get("successful_calls", 0))
+            with g3:
+                st.metric("Compliance Blocks", stats.get("compliance_blocks", 0))
+            with g4:
+                st.metric("Governed Servers", stats.get("registered_servers", 0))
 
     st.divider()
 

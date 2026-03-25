@@ -30,8 +30,11 @@ CLAUDE_TEMPERATURE = 0.7
 CLAUDE_MAX_TOKENS = 8192
 
 # Ollama Settings (Local LLM)
+# Supported models: llama3.2, qwen3:235b-thinking, deepseek-r1, etc.
+# For large thinking models like qwen3:235b-thinking, ensure sufficient VRAM/RAM.
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:235b-thinking")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "600"))  # Larger models need longer timeouts
 
 # LLM Provider selection (anthropic, ollama)
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
@@ -73,7 +76,7 @@ VECTOR_STORE_PATH = "data/chroma"
 FEATURE_FLAGS = {
     "use_persistent_context": False,     # Phase 1: SQLite + ChromaDB (disabled - download timeout issue)
     "use_specialized_agents": True,      # Phase 1: Chemical, Clinical, etc. - WORKING
-    "use_governance_gateway": False,     # Phase 2: Context Forge Gateway (optional)
+    "use_governance_gateway": True,      # Phase 2: Context Forge Gateway - ENABLED
     "use_langgraph_orchestrator": True,  # Phase 3: Orchestrator - REQUIRED for queries
     "use_bidirectional_learning": False, # Phase 4: MCP-Agent learning (future)
     "enable_reporting": True,            # Phase 5: PDF/Markdown reports - WORKING

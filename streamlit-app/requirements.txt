@@ -14,6 +14,9 @@ anthropic>=0.40.0
 langchain-openai>=0.1.0
 openai>=1.0.0
 
+# Ollama integration for local LLM models (qwen3, llama3, etc.)
+langchain-ollama>=0.2.0
+
 # LangGraph for agent orchestration (dual orchestration system)
 langgraph>=0.2.0
 
@@ -34,10 +37,10 @@ pydantic>=2.0.0
 sqlalchemy>=2.0.0
 markdown>=3.5.0
 
-# Optional: Persistent Context Layer - vector search (install manually if needed)
-# Requires large downloads; only needed when use_persistent_context=True in config.py
-# chromadb>=0.4.0
-# sentence-transformers>=2.2.0
+# Persistent Context Layer - vector search (Required for Context Forge)
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+numpy>=1.24.0
 
 # Optional: PDF report export (requires system-level GTK/Cairo libraries)
 # weasyprint>=60.0

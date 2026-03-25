@@ -26,13 +26,16 @@ def get_llm_from_config(
         raise ValueError("Invalid configuration: missing profile information")
     
     # Handle different profiles
-    if profile.name == "standard":
+    if profile.name == "ollama":
+        return _get_ollama_llm(config_data, temperature, model_override)
+
+    elif profile.name == "standard":
         provider = config_data.get("llm_provider", "anthropic")
         if provider == "ollama":
             return _get_ollama_llm(config_data, temperature, model_override)
         else:
             return _get_anthropic_llm(config_data, temperature, max_tokens, model_override)
-    
+
     elif profile.name == "merck":
         # For Merck enterprise configuration, check if model is Azure, Bedrock, or Anthropic
         model_name = model_override or config_data.get("primary_model", "gpt-4o")
@@ -179,22 +182,36 @@ def _get_ollama_llm(
     temperature: Optional[float] = None,
     model_override: Optional[str] = None
 ):
-    """Get Ollama LLM instance."""
+    """
+    Get Ollama LLM instance.
+
+    Supports large thinking models (e.g. qwen3:235b-thinking) with extended
+    timeouts and appropriate num_ctx settings.
+    """
     try:
         from langchain_ollama import ChatOllama
     except ImportError:
         raise ImportError(
-            "langchain-ollama is required for local models."
+            "langchain-ollama is required for local models. "
+            "Install with: pip install langchain-ollama"
         )
 
-    model = model_override or config_data.get("ollama_model", "llama3.2")
+    model = model_override or config_data.get("ollama_model", "qwen3:235b-thinking")
     base_url = config_data.get("ollama_base_url", "http://localhost:11434")
     temp = temperature if temperature is not None else 0.7
+    timeout = config_data.get("ollama_timeout", 600)
+
+    # Large thinking models benefit from a bigger context window
+    kwargs = {}
+    if "thinking" in model or "235b" in model or "deepseek" in model:
+        kwargs["num_ctx"] = config_data.get("ollama_num_ctx", 32768)
 
     return ChatOllama(
         model=model,
         base_url=base_url,
         temperature=temp,
+        timeout=timeout,
+        **kwargs,
     )
 
 
@@ -224,12 +241,17 @@ def validate_llm_setup(config_data: Optional[Dict[str, Any]] = None) -> dict:
     validation = {"profile": profile.name, "ready": False, "errors": []}
     
     try:
-        if profile.name == "standard":
+        if profile.name == "ollama":
+            validation["ready"] = True
+            validation["provider"] = "Ollama (Local)"
+            validation["model"] = config_data.get("ollama_model", "qwen3:235b-thinking")
+
+        elif profile.name == "standard":
             provider = config_data.get("llm_provider", "anthropic")
             if provider == "ollama":
                 validation["ready"] = True
                 validation["provider"] = "Ollama (Local)"
-                validation["model"] = config_data.get("ollama_model", "llama3.2")
+                validation["model"] = config_data.get("ollama_model", "qwen3:235b-thinking")
             else:
                 api_key = config_data.get("anthropic_api_key") or os.getenv("ANTHROPIC_API_KEY")
                 if not api_key:

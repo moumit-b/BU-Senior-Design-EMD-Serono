@@ -1,5 +1,4 @@
-# Progress tracking (internal use only)
-progress/
+# Assignment docs (internal only)
 AssignmentDocs/
 
 # Python
@@ -48,3 +47,30 @@ geminiModelPricing.md
 rateLimits.md
 LLM_COMPARISON*.md
 BUDGET*.md
+
+# Temporary files and one-off scripts
+nul
+temp*.py
+temp*.txt
+update_*.py
+MoAndRyan.pf
+
+# One-off status/fix logs (already captured in progress/)
+FIXES_APPLIED.md
+GEMINI_SETUP.md
+IMPLEMENTATION_COMPLETE.md
+ORCHESTRATOR_FIXED.md
+MERCK_CHANGES_FIXES.md
+MODEL_SWITCHED.md
+
+# Test scripts and reports (not part of main codebase)
+streamlit-app/test_*.py
+streamlit-app/test_*.md
+streamlit-app/*_SUMMARY.md
+streamlit-app/*_COMPLETE.md
+streamlit-app/*_REFERENCE.md
+streamlit-app/*_ISSUE.md
+streamlit-app/*_SWITCHED.md
+streamlit-app/QUICKSTART.md
+streamlit-app/app_simple.py
+streamlit-app/app_v2.py
