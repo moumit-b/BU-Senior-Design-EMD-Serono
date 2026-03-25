@@ -229,9 +229,9 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
             # Store the wrapper to keep the connection alive
             _active_wrappers[server_name] = wrapper
             
-            print(f"✓ Connected to {server_name}, loaded {len(tools)} tools")
+            print(f"[OK] Connected to {server_name}, loaded {len(tools)} tools")
         except Exception as e:
-            print(f"✗ Failed to connect to {server_name}: {str(e)}")
+            print(f"[FAIL] Failed to connect to {server_name}: {str(e)}")
             # Try to clean up any partially initialized connections
             try:
                 await wrapper.disconnect()

@@ -94,7 +94,7 @@ class AgentOrchestrator:
         # Step 2: Check if we have a composed tool for this
         composed_tool = self.tool_composer.find_matching_tool(query)
         if composed_tool:
-            print(f"✓ Found composed tool: {composed_tool.name}")
+            print(f"[OK] Found composed tool: {composed_tool.name}")
             result = await self._execute_composed_tool(composed_tool, plan)
             return {
                 'output': result,
