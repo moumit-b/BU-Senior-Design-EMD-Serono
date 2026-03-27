@@ -40,6 +40,7 @@ class LiteratureAgent(BaseAgent):
     def _define_preferred_mcps(self) -> List[str]:
         return [
             "biomcp",           # PubMed/PubTator3
+            "medrxiv",          # medRxiv Preprints
             "semanticscholar",  # Semantic Scholar
             "pubchem",          # Chemical literature refs
             "brave",            # Web/news search
@@ -52,7 +53,7 @@ class LiteratureAgent(BaseAgent):
             "PubMed", "PMID", "DOI", "journal", "citation",
             "author", "abstract", "research", "review",
             "meta-analysis", "clinical study", "scientific",
-            "semantic scholar", "preprint", "patent"
+            "semantic scholar", "preprint", "patent", "medrxiv"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:

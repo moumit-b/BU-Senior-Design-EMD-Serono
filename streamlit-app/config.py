@@ -65,6 +65,11 @@ MCP_SERVERS = {
         "command": "node",
         "args": ["../servers/web_knowledge/index.js"],
         "description": "Web/Knowledge MCP server for Wikipedia, clinical trials, gene info, and drug information"
+    },
+    "medrxiv": {
+        "command": "python",
+        "args": ["../servers/medrxiv/run_medrxiv.py"],
+        "description": "medRxiv MCP server for medical preprint articles and metadata"
     }
 }
 
