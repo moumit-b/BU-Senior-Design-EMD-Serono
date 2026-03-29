@@ -27,14 +27,22 @@ def tavily_search(tool_input: str) -> str:
     # Ensure we have a non-empty search query
     if not query or not str(query).strip():
         return json.dumps({"error": "Missing search query"})
-    client = TavilyClient(api_key=api_key)
+    try:
+        client = TavilyClient(api_key=api_key)
 
-    response = client.search(
-        query=query,
-        search_depth="advanced",
-        max_results=5,
-        include_answer=True
-    )
+        response = client.search(
+            query=query,
+            search_depth="advanced",
+            max_results=5,
+            include_answer=True
+        )
+    except Exception as e:
+        error_payload = {
+            "error": "Tavily search failed",
+            "exception_type": type(e).__name__,
+            "message": str(e),
+        }
+        return json.dumps(error_payload)
 
     return json.dumps(response, indent=2)
 
