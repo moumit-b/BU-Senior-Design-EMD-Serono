@@ -7,6 +7,7 @@ import json
 import re
 from langchain_core.tools import Tool
 from utils.llm_factory import get_llm_from_config
+from utils.terminal_logger import TerminalLoggerCallback
 from config import AGENT_MAX_ITERATIONS, AGENT_VERBOSE
 
 
@@ -31,6 +32,7 @@ class MCPAgent:
     def _setup_agent(self):
         """Set up the LLM using the factory."""
         try:
+            self._logger_callback = TerminalLoggerCallback()
             if self.config_data:
                 # Use new configuration system
                 self.llm = get_llm_from_config(self.config_data, temperature=0.7)
@@ -134,7 +136,7 @@ Begin by selecting an appropriate tool from the available list:"""
         # If no tools, use direct LLM mode
         if not self.tools:
             try:
-                response = self.llm.invoke(conversation)
+                response = self.llm.invoke(conversation, config={"callbacks": [self._logger_callback]})
                 answer = response.content if hasattr(response, 'content') else str(response)
                 return {
                     "output": answer,
@@ -153,7 +155,7 @@ Begin by selecting an appropriate tool from the available list:"""
                 if AGENT_VERBOSE:
                     print(f"\n=== Iteration {iteration + 1} ===")
 
-                response = self.llm.invoke(conversation)
+                response = self.llm.invoke(conversation, config={"callbacks": [self._logger_callback]})
                 response_text = response.content if hasattr(response, 'content') else str(response)
 
                 if AGENT_VERBOSE:

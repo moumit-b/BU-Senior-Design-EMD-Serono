@@ -85,7 +85,7 @@ def _get_anthropic_llm(
             "API key is not set. Please set ANTHROPIC_API_KEY or AZURE_OPENAI_API_KEY in your .env file."
         )
 
-    model = model_override or config_data.get("claude_model", "claude-sonnet-4-5-20250514")
+    model = model_override or config_data.get("claude_model", "claude-sonnet-4-20250514")
     temp = temperature if temperature is not None else config_data.get("claude_temperature", 0.7)
     tokens = max_tokens or config_data.get("claude_max_tokens", 8192)
 
@@ -201,10 +201,14 @@ def _get_ollama_llm(
     temp = temperature if temperature is not None else 0.7
     timeout = config_data.get("ollama_timeout", 600)
 
-    # Large thinking models benefit from a bigger context window
     kwargs = {}
-    if "thinking" in model or "235b" in model or "deepseek" in model:
-        kwargs["num_ctx"] = config_data.get("ollama_num_ctx", 32768)
+    num_ctx = config_data.get("ollama_num_ctx", 0)
+    if num_ctx > 0:
+        # Explicit num_ctx from config — use it (critical for RAM-constrained machines)
+        kwargs["num_ctx"] = num_ctx
+    elif "thinking" in model or "235b" in model or "deepseek" in model:
+        # Large thinking models benefit from a bigger context window
+        kwargs["num_ctx"] = 32768
 
     return ChatOllama(
         model=model,
@@ -259,7 +263,7 @@ def validate_llm_setup(config_data: Optional[Dict[str, Any]] = None) -> dict:
                 else:
                     validation["ready"] = True
                     validation["provider"] = "Anthropic"
-                    validation["model"] = config_data.get("claude_model", "claude-sonnet-4-5-20250514")
+                    validation["model"] = config_data.get("claude_model", "claude-sonnet-4-20250514")
                     
         elif profile.name == "merck":
             api_key = config_data.get("api_key")

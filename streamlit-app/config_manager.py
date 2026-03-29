@@ -81,13 +81,14 @@ class ConfigurationManager:
                 config_data = {
                     "profile": profile,
                     "llm_provider": getattr(config_module, 'LLM_PROVIDER', 'anthropic'),
-                    "claude_model": getattr(config_module, 'CLAUDE_MODEL', 'claude-sonnet-4-5-20250514'),
+                    "claude_model": getattr(config_module, 'CLAUDE_MODEL', 'claude-sonnet-4-20250514'),
                     "anthropic_api_key": getattr(config_module, 'ANTHROPIC_API_KEY', ''),
                     "claude_temperature": getattr(config_module, 'CLAUDE_TEMPERATURE', 0.7),
                     "claude_max_tokens": getattr(config_module, 'CLAUDE_MAX_TOKENS', 8192),
                     "ollama_base_url": getattr(config_module, 'OLLAMA_BASE_URL', 'http://localhost:11434'),
                     "ollama_model": getattr(config_module, 'OLLAMA_MODEL', 'qwen3:235b-thinking'),
                     "ollama_timeout": getattr(config_module, 'OLLAMA_TIMEOUT', 600),
+                    "ollama_num_ctx": getattr(config_module, 'OLLAMA_NUM_CTX', 0),
                     "mcp_servers": getattr(config_module, 'MCP_SERVERS', {}),
                     "feature_flags": getattr(config_module, 'FEATURE_FLAGS', {}),
                 }
@@ -100,6 +101,7 @@ class ConfigurationManager:
                     "ollama_base_url": getattr(config_module, 'OLLAMA_BASE_URL', 'http://localhost:11434'),
                     "ollama_model": getattr(config_module, 'OLLAMA_MODEL', 'qwen3:235b-thinking'),
                     "ollama_timeout": getattr(config_module, 'OLLAMA_TIMEOUT', 600),
+                    "ollama_num_ctx": getattr(config_module, 'OLLAMA_NUM_CTX', 0),
                     "mcp_servers": getattr(config_module, 'MCP_SERVERS', {}),
                     "feature_flags": getattr(config_module, 'FEATURE_FLAGS', {}),
                 }
@@ -233,7 +235,7 @@ class ConfigurationManager:
                 else:
                     return {
                         "provider": "Anthropic",
-                        "model": config_data.get("claude_model", "claude-sonnet-4-5-20250514"),
+                        "model": config_data.get("claude_model", "claude-sonnet-4-20250514"),
                         "temperature": config_data.get("claude_temperature", 0.7),
                         "max_tokens": config_data.get("claude_max_tokens", 8192),
                         "api_available": bool(config_data.get("anthropic_api_key"))

@@ -72,5 +72,12 @@ streamlit-app/*_REFERENCE.md
 streamlit-app/*_ISSUE.md
 streamlit-app/*_SWITCHED.md
 streamlit-app/QUICKSTART.md
+streamlit-app/LOCAL_SETUP.md
 streamlit-app/app_simple.py
 streamlit-app/app_v2.py
+
+# Local report outputs
+report*.md
+
+# Progress tracking docs (local working notes)
+progress/
