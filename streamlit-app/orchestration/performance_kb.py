@@ -306,14 +306,14 @@ class PerformanceKnowledgeBase:
         ]
         for pattern in high_perf[:5]:  # Top 5
             insights.append(
-                f"✓ {pattern.agent_name} + {pattern.mcp_name} achieves "
+                f"[OK] {pattern.agent_name} + {pattern.mcp_name} achieves "
                 f"{pattern.success_rate*100:.0f}% success for {pattern.query_type.value} queries"
             )
 
         # MCP strengths
         for mcp_name, learning in self.mcp_learnings.items():
             if learning.strengths:
-                insights.append(f"✓ {mcp_name}: {learning.strengths[0]}")
+                insights.append(f"[OK] {mcp_name}: {learning.strengths[0]}")
 
         return insights
 

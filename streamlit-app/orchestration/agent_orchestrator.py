@@ -7,8 +7,12 @@ This is the TOP LAYER of dual orchestration that handles:
 - Multi-agent workflow execution
 - Result synthesis
 - Learning from MCP performance feedback (Novel Feature 1)
+
+All tool calls are now mediated through the Context Forge Gateway via the
+MCPOrchestrator, which proxies through the governance layer.
 """
 
+import uuid
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import re
@@ -39,6 +43,9 @@ class AgentOrchestrator:
     1. Learns from MCP feedback to improve agent-MCP matching
     2. Uses performance KB to route queries optimally
     3. Creates and reuses composed tools
+
+    Every tool call now carries a ``RequestContext`` so the Gateway can
+    audit, rate-limit and compliance-check the request.
     """
 
     def __init__(
@@ -46,12 +53,16 @@ class AgentOrchestrator:
         mcp_orchestrator: MCPOrchestrator,
         performance_kb: PerformanceKnowledgeBase,
         tool_composer: ToolComposer,
-        session_manager: SessionManager
+        session_manager: SessionManager,
     ):
         self.mcp_orchestrator = mcp_orchestrator
         self.performance_kb = performance_kb
         self.tool_composer = tool_composer
         self.session_manager = session_manager
+
+        # Current user / session — set by the caller before execute_query
+        self.user_id: str = "default_user"
+        self.session_id: str = str(uuid.uuid4())
 
         # Agent preferences (learned over time)
         self.agent_mcp_preferences: Dict[str, Dict[str, float]] = {
@@ -83,7 +94,7 @@ class AgentOrchestrator:
         # Step 2: Check if we have a composed tool for this
         composed_tool = self.tool_composer.find_matching_tool(query)
         if composed_tool:
-            print(f"✓ Found composed tool: {composed_tool.name}")
+            print(f"[OK] Found composed tool: {composed_tool.name}")
             result = await self._execute_composed_tool(composed_tool, plan)
             return {
                 'output': result,
@@ -191,26 +202,25 @@ class AgentOrchestrator:
         task = plan.tasks[0]
         agent_id = task['agent']
 
-        # Get agent's preferred MCPs
-        preferred_mcps = self.agent_mcp_preferences.get(agent_id, {})
-
-        # Prepare context for MCP orchestrator
+        # Prepare context for MCP orchestrator — includes governance fields
         context = {
             'agent_id': agent_id,
             'query_type': task['action'],
-            'keywords': task['keywords']
+            'keywords': task['keywords'],
+            # Governance context (forwarded to ContextForgeGateway)
+            'user_id': self.user_id,
+            'session_id': self.session_id,
+            'query_text': plan.original_query,
         }
 
-        # For this demo, we'll simulate calling an MCP tool
-        # In a real implementation, we'd determine which tool based on the agent's logic
         tool_name = self._select_tool_for_task(task)
         params = self._extract_params_from_query(task['input'])
 
-        # Call MCP orchestrator
+        # Call MCP orchestrator (which routes through the Gateway)
         result, feedback = await self.mcp_orchestrator.route_tool_call(
             tool_name=tool_name,
             params=params,
-            context=context
+            context=context,
         )
 
         # Learn from feedback
@@ -221,7 +231,7 @@ class AgentOrchestrator:
             'method': 'simple_query',
             'agent': agent_id,
             'feedback': feedback,
-            'success': feedback.success
+            'success': feedback.success,
         }
 
     async def _execute_sequential_workflow(self, plan: QueryPlan) -> Dict[str, Any]:
@@ -276,7 +286,11 @@ class AgentOrchestrator:
         context = {
             'agent_id': agent_id,
             'query_type': task['action'],
-            'keywords': task.get('keywords', [])
+            'keywords': task.get('keywords', []),
+            # Governance context
+            'user_id': self.user_id,
+            'session_id': self.session_id,
+            'query_text': task.get('input', ''),
         }
 
         tool_name = self._select_tool_for_task(task)
@@ -285,7 +299,7 @@ class AgentOrchestrator:
         result, feedback = await self.mcp_orchestrator.route_tool_call(
             tool_name=tool_name,
             params=params,
-            context=context
+            context=context,
         )
 
         self._learn_from_feedback(agent_id, feedback)
@@ -294,7 +308,7 @@ class AgentOrchestrator:
             'agent': agent_id,
             'result': result,
             'feedback': feedback,
-            'success': feedback.success
+            'success': feedback.success,
         }
 
     async def _execute_composed_tool(

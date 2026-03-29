@@ -28,6 +28,7 @@ from models.performance import QueryType, PerformanceFeedback
 from models.entities import Drug, Gene, EntityType
 from mcp_tools import MCPToolWrapper
 from config import MCP_SERVERS
+from governance import ContextForgeGateway, RequestContext, ToolResponse
 
 # Page configuration
 st.set_page_config(
@@ -44,6 +45,7 @@ if 'demo_initialized' not in st.session_state:
     st.session_state.performance_kb = None
     st.session_state.tool_composer = None
     st.session_state.session_manager = None
+    st.session_state.gateway = None
     st.session_state.query_history = []
     st.session_state.active_session_id = None
     st.session_state.mcps_connected = False
@@ -70,7 +72,7 @@ async def initialize_mcp_wrappers(servers: List[str]) -> Dict[str, MCPToolWrappe
 
 
 def initialize_demo():
-    """Initialize the dual orchestration system."""
+    """Initialize the dual orchestration system with Context Forge Gateway."""
     if st.session_state.demo_initialized:
         return
 
@@ -79,8 +81,13 @@ def initialize_demo():
         st.session_state.performance_kb = PerformanceKnowledgeBase()
         st.session_state.session_manager = SessionManager()
 
-        # Initialize MCP orchestrator (will connect to MCPs on first use)
+        # Initialize Context Forge Gateway (governance layer)
+        st.session_state.gateway = ContextForgeGateway()
+
+        # Initialize MCP orchestrator and attach gateway
         st.session_state.mcp_orchestrator = MCPOrchestrator(mcp_wrappers={})
+        st.session_state.mcp_orchestrator.set_gateway(st.session_state.gateway)
+
         st.session_state.tool_composer = ToolComposer(st.session_state.mcp_orchestrator)
 
         st.session_state.demo_initialized = True
@@ -192,6 +199,10 @@ def display_header():
                 if st.session_state.mcp_orchestrator:
                     st.session_state.mcp_orchestrator.mcp_wrappers = wrappers
 
+                # Register wrappers with the Context Forge Gateway
+                if st.session_state.gateway and wrappers:
+                    st.session_state.gateway.register_mcp_wrappers(wrappers)
+
             st.rerun()
 
     # Show connection details in expander
@@ -202,6 +213,32 @@ def display_header():
                     st.success(f"✓ {server_name}: Connected")
                 else:
                     st.error(f"✗ {server_name}: {status}")
+
+    # Governance Gateway status
+    if st.session_state.gateway is not None:
+        gw = st.session_state.gateway
+        stats = gw.get_gateway_stats()
+        health = gw.get_health_status()
+        with st.expander("🛡️ Context Forge Gateway Status"):
+            g1, g2, g3, g4 = st.columns(4)
+            with g1:
+                st.metric("Total Calls", stats["total_calls"])
+            with g2:
+                st.metric("Successful", stats["successful_calls"])
+            with g3:
+                st.metric("Compliance Blocks", stats["compliance_blocks"])
+            with g4:
+                st.metric("Healthy Servers", stats["healthy_servers"])
+            if health:
+                for srv, info in health.items():
+                    hcol1, hcol2 = st.columns([3, 1])
+                    with hcol1:
+                        st.text(f"{srv} ({info.get('tool_count', 0)} tools)")
+                    with hcol2:
+                        if info.get("healthy"):
+                            st.success("Healthy")
+                        else:
+                            st.error("Unhealthy")
 
     st.divider()
 
@@ -319,45 +356,86 @@ def execute_query(query: str, scenario: str):
             and st.session_state.connection_status.get(recommended_mcp) == "connected"
         )
 
-        with st.spinner(f"Executing via {recommended_mcp} {'(REAL)' if use_real_mcp else '(SIMULATED)'}..."):
-            if use_real_mcp:
-                # REAL MCP CALL
-                try:
-                    wrapper = st.session_state.mcp_wrappers[recommended_mcp]
+        # Determine if we should use the gateway
+        use_gateway = (
+            use_real_mcp
+            and st.session_state.gateway is not None
+            and recommended_mcp in getattr(st.session_state.gateway, '_mcp_wrappers', {})
+        )
 
+        label = "GATEWAY" if use_gateway else ("REAL" if use_real_mcp else "SIMULATED")
+
+        with st.spinner(f"Executing via {recommended_mcp} ({label})..."):
+            if use_real_mcp:
+                # REAL MCP CALL — routed through Context Forge Gateway when available
+                try:
                     # Preprocess query for MCP-specific format
                     processed_query = query
                     if recommended_mcp == "pubchem" and tool_name == "search_compounds_by_name":
-                        # Extract compound name from natural language query
-                        # Simple extraction: look for key words and take the last word or compound name
                         import re
-                        # Remove question words and common phrases
                         processed_query = re.sub(r'\b(what|is|the|molecular|formula|of|structure|tell me about|find|show me)\b', '', query.lower(), flags=re.IGNORECASE)
                         processed_query = processed_query.strip().strip('?').strip()
-
-                        # If nothing left, use original query
                         if not processed_query:
                             processed_query = query
 
-                    # Call the tool via wrapper using the persistent event loop
                     loop_manager = get_mcp_event_loop()
-                    result_data = loop_manager.run_coroutine(
-                        wrapper.call_tool(tool_name, {tool_params_key: processed_query}),
-                        timeout=30
-                    )
 
-                    # Check if result is an error message
-                    if isinstance(result_data, str) and result_data.startswith("Error"):
-                        success = False
-                        result_count = 0
-                        st.error(f"Tool call failed: {result_data}")
-                    else:
-                        success = True
-                        # Try to parse result count
-                        if isinstance(result_data, str):
-                            result_count = len(result_data.split('\n')[:20])  # Approximate
+                    if use_gateway:
+                        # --- Gateway-mediated path ---
+                        gateway = st.session_state.gateway
+                        req_context = RequestContext(
+                            user_id="demo_user",
+                            session_id=st.session_state.get("active_session_id", "demo"),
+                            agent_name=agent_name,
+                            query_text=query,
+                        )
+                        tool_response: ToolResponse = loop_manager.run_coroutine(
+                            gateway.call_tool(
+                                server=recommended_mcp,
+                                tool=tool_name,
+                                parameters={tool_params_key: processed_query},
+                                context=req_context,
+                            ),
+                            timeout=30,
+                        )
+
+                        if tool_response.success:
+                            result_data = tool_response.result
+                            success = True
+                            if isinstance(result_data, str):
+                                result_count = len(result_data.split('\n')[:20])
+                            else:
+                                result_count = 1
                         else:
-                            result_count = 1
+                            success = False
+                            result_count = 0
+                            result_data = tool_response.error
+                            st.error(f"Gateway call failed: {tool_response.error}")
+
+                        # Show governance metadata
+                        st.info(
+                            f"**Governance:** compliance={'PASS' if tool_response.compliance_passed else 'FAIL'} | "
+                            f"audit_id={tool_response.audit_log_id} | "
+                            f"source={tool_response.source_attribution[0]['data_source'] if tool_response.source_attribution else 'N/A'}"
+                        )
+                    else:
+                        # --- Direct wrapper path (fallback) ---
+                        wrapper = st.session_state.mcp_wrappers[recommended_mcp]
+                        result_data = loop_manager.run_coroutine(
+                            wrapper.call_tool(tool_name, {tool_params_key: processed_query}),
+                            timeout=30,
+                        )
+
+                        if isinstance(result_data, str) and result_data.startswith("Error"):
+                            success = False
+                            result_count = 0
+                            st.error(f"Tool call failed: {result_data}")
+                        else:
+                            success = True
+                            if isinstance(result_data, str):
+                                result_count = len(result_data.split('\n')[:20])
+                            else:
+                                result_count = 1
 
                 except Exception as e:
                     st.error(f"MCP call failed: {str(e)}")
@@ -388,7 +466,10 @@ def execute_query(query: str, scenario: str):
 
         # Show the architecture flow
         st.markdown("**Architecture Flow:**")
-        st.markdown(f"```\nUser Query → Agent Orchestrator → {agent_name} → MCP Orchestrator → {recommended_mcp}\n```")
+        if use_gateway:
+            st.markdown(f"```\nUser Query → Agent Orchestrator → {agent_name} → MCP Orchestrator → Context Forge Gateway → {recommended_mcp}\n```")
+        else:
+            st.markdown(f"```\nUser Query → Agent Orchestrator → {agent_name} → MCP Orchestrator → {recommended_mcp}\n```")
 
         learn_col1, learn_col2 = st.columns(2)
 

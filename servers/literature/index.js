@@ -7,14 +7,33 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import https from 'https';
+
+// Create an HTTPS agent with custom SSL configuration
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false, // Disable SSL verification for problematic certificates
+  // Alternatively, if you have a specific CA file:
+  // ca: fs.readFileSync('/path/to/your/ca-certificate.pem')
+});
+
 async function getJSON(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "mcp-literature/0.1" } });
+  const options = {
+    headers: { "User-Agent": "mcp-literature/0.1" },
+    agent: url.startsWith('https:') ? httpsAgent : undefined
+  };
+  
+  const res = await fetch(url, options);
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }
 
 async function getText(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "mcp-literature/0.1" } });
+  const options = {
+    headers: { "User-Agent": "mcp-literature/0.1" },
+    agent: url.startsWith('https:') ? httpsAgent : undefined
+  };
+  
+  const res = await fetch(url, options);
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.text();
 }

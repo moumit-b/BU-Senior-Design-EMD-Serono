@@ -15,13 +15,11 @@ from models.session import (
     HypothesisStatus, InsightType
 )
 from models.entities import Entity, EntityType
-
 from .database import DatabaseManager
 from .db_models import (
     SessionRecord, EntityRecord, QueryRecord, HypothesisRecord,
     InsightRecord, SuggestionRecord
 )
-from .vector_store import VectorStore
 
 
 class PersistentSessionManager:
@@ -41,7 +39,26 @@ class PersistentSessionManager:
         """
         self.db_manager = DatabaseManager(db_path)
         self.db_manager.initialize()
-        self.vector_store = VectorStore(vector_store_path)
+        self.vector_store_path = vector_store_path
+        self._vector_store = None
+
+    @property
+    def vector_store(self):
+        """Lazy-loaded vector store."""
+        if self._vector_store is None:
+            from .vector_store import VectorStore
+            self._vector_store = VectorStore(self.vector_store_path)
+        return self._vector_store
+
+        self._vector_store = None
+
+    @property
+    def vector_store(self):
+        """Lazy-loaded vector store."""
+        if self._vector_store is None:
+            from .vector_store import VectorStore
+            self._vector_store = VectorStore(self.persist_directory if hasattr(self, 'persist_directory') else self.vector_store_path)
+        return self._vector_store
 
     def create_session(
         self,

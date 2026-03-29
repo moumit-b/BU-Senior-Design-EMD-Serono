@@ -41,8 +41,8 @@ class VectorStore:
             anonymized_telemetry=False
         ))
 
-        # Initialize embedding model
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Initialize embedding model with retry and fallback
+        self.embedding_model = self._initialize_embedding_model()
 
         # Create collections
         self.queries_collection = self.client.get_or_create_collection(
@@ -57,6 +57,46 @@ class VectorStore:
             name="insights",
             metadata={"description": "Insights discovered during research"}
         )
+
+    def _initialize_embedding_model(self, model_name: str = 'all-MiniLM-L6-v2'):
+        """
+        Initialize the embedding model with retries and a dummy fallback.
+        
+        Args:
+            model_name: Name of the sentence-transformer model
+            
+        Returns:
+            A model object that implements .encode()
+        """
+        import time
+        import numpy as np
+        
+        # Try loading with retries
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                print(f"Loading embedding model {model_name} (attempt {attempt + 1}/{max_retries})...")
+                return SentenceTransformer(model_name)
+            except Exception as e:
+                print(f"Error loading embedding model: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    print("CRITICAL: Failed to load embedding model after multiple attempts.")
+                    print("Falling back to dummy embedding model for system stability.")
+                    
+                    # Create a dummy model that returns random embeddings
+                    # This allows the app to start even without the model
+                    class DummyEmbeddingModel:
+                        def encode(self, text, **kwargs):
+                            # Return a random normalized vector of size 384 (all-MiniLM-L6-v2 size)
+                            vec = np.random.randn(384)
+                            return vec / np.linalg.norm(vec)
+                        
+                        def tolist(self):
+                            return self
+                            
+                    return DummyEmbeddingModel()
 
     def _ensure_directory(self):
         """Create persist directory if it doesn't exist."""

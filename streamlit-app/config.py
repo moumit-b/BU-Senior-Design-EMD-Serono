@@ -21,16 +21,24 @@ except ImportError:
 except Exception:
     pass
 
-# === LLM Settings ===
+# LLM Settings
 # Using Anthropic Claude Sonnet 4.5 as the primary LLM provider
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = "claude-sonnet-4-5-20250514"
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
 CLAUDE_TEMPERATURE = 0.7
 CLAUDE_MAX_TOKENS = 8192
 
-# LLM Provider selection
-LLM_PROVIDER = "anthropic"
+# Ollama Settings (Local LLM)
+# Supported models: llama3.2, qwen3:235b-thinking, deepseek-r1, etc.
+# For large thinking models like qwen3:235b-thinking, ensure sufficient VRAM/RAM.
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:235b-thinking")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "600"))  # Larger models need longer timeouts
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "0"))  # 0 = use model default; set to 4096 for RAM-constrained machines
+
+# LLM Provider selection (anthropic, ollama)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 
 # MCP Server configurations
 MCP_SERVERS = {
@@ -41,7 +49,7 @@ MCP_SERVERS = {
     },
     "biomcp": {
         "command": "python",
-        "args": ["-m", "biomcp", "run"],
+        "args": ["../servers/bio/run_biomcp.py"],
         "description": "BioMCP server - Comprehensive biomedical research (PubMed, clinical trials, variants, genes)"
     },
     "literature": {
@@ -69,7 +77,7 @@ VECTOR_STORE_PATH = "data/chroma"
 FEATURE_FLAGS = {
     "use_persistent_context": False,     # Phase 1: SQLite + ChromaDB (disabled - download timeout issue)
     "use_specialized_agents": True,      # Phase 1: Chemical, Clinical, etc. - WORKING
-    "use_governance_gateway": False,     # Phase 2: Context Forge Gateway (optional)
+    "use_governance_gateway": True,      # Phase 2: Context Forge Gateway - ENABLED
     "use_langgraph_orchestrator": True,  # Phase 3: Orchestrator - REQUIRED for queries
     "use_bidirectional_learning": False, # Phase 4: MCP-Agent learning (future)
     "enable_reporting": True,            # Phase 5: PDF/Markdown reports - WORKING

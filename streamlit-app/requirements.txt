@@ -10,6 +10,13 @@ langchain-community>=0.0.20
 langchain-anthropic>=0.3.0
 anthropic>=0.40.0
 
+# OpenAI integration for Azure OpenAI and Bedrock compatibility
+langchain-openai>=0.1.0
+openai>=1.0.0
+
+# Ollama integration for local LLM models (qwen3, llama3, etc.)
+langchain-ollama>=0.2.0
+
 # LangGraph for agent orchestration (dual orchestration system)
 langgraph>=0.2.0
 
@@ -26,11 +33,14 @@ httpx>=0.25.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 
-# Persistent Context Layer
+# Persistent Context Layer (required for DB models even when feature is disabled)
 sqlalchemy>=2.0.0
+markdown>=3.5.0
+
+# Persistent Context Layer - vector search (Required for Context Forge)
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
+numpy>=1.24.0
 
-# Report Generation
-weasyprint>=60.0
-markdown>=3.5.0
+# Optional: PDF report export (requires system-level GTK/Cairo libraries)
+# weasyprint>=60.0

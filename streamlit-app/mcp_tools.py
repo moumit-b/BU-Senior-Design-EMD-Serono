@@ -3,6 +3,7 @@ MCP Tools module - Connects to MCP servers and exposes their tools to LangChain.
 """
 
 import asyncio
+import threading
 from typing import List, Dict, Any, Optional
 import json
 
@@ -18,6 +19,25 @@ except ImportError:
 # Import LangChain Tool
 from langchain_core.tools import Tool
 from pydantic import BaseModel, Field
+
+
+# Global storage for the background event loop
+_mcp_loop: Optional[asyncio.AbstractEventLoop] = None
+_mcp_thread: Optional[threading.Thread] = None
+
+def _start_background_loop(loop: asyncio.AbstractEventLoop):
+    """Run the event loop in a background thread."""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+def get_mcp_loop() -> asyncio.AbstractEventLoop:
+    """Get or create the global background event loop for MCP operations."""
+    global _mcp_loop, _mcp_thread
+    if _mcp_loop is None:
+        _mcp_loop = asyncio.new_event_loop()
+        _mcp_thread = threading.Thread(target=_start_background_loop, args=(_mcp_loop,), daemon=True)
+        _mcp_thread.start()
+    return _mcp_loop
 
 
 class MCPToolWrapper:
@@ -36,9 +56,12 @@ class MCPToolWrapper:
         self.write_stream = None
         self._tools_cache: List[Any] = []
         self._context_manager = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def connect(self):
         """Establish connection to the MCP server."""
+        self._loop = asyncio.get_running_loop()
+        
         server_params = StdioServerParameters(
             command=self.server_config["command"],
             args=self.server_config["args"]
@@ -62,10 +85,19 @@ class MCPToolWrapper:
     async def disconnect(self):
         """Close the MCP server connection."""
         if self.session:
-            await self.session.__aexit__(None, None, None)
+            try:
+                await self.session.__aexit__(None, None, None)
+            except:
+                pass
 
         if self._context_manager:
-            await self._context_manager.__aexit__(None, None, None)
+            try:
+                await self._context_manager.__aexit__(None, None, None)
+            except:
+                pass
+        
+        self.session = None
+        self._context_manager = None
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """
@@ -115,7 +147,7 @@ class MCPToolWrapper:
             tool_description = mcp_tool.description or "No description available"
 
             # Create a closure to capture the tool_name and self
-            def make_tool_func(name: str, wrapper_instance):
+            def make_tool_func(name: str, wrapper_instance: 'MCPToolWrapper'):
                 def tool_func(arguments: str) -> str:
                     """Execute the MCP tool."""
                     try:
@@ -128,17 +160,21 @@ class MCPToolWrapper:
                         # Try to extract simple key-value
                         args_dict = {"query": arguments}
 
-                    # Run the async call - always use a new event loop in a thread for Streamlit
+                    # Use run_coroutine_threadsafe to execute call_tool in the background loop
+                    if not wrapper_instance._loop:
+                        return f"Error: MCP wrapper loop not initialized for tool {name}"
+                    
                     try:
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            future = executor.submit(
-                                lambda: asyncio.run(wrapper_instance.call_tool(name, args_dict))
-                            )
-                            result = future.result(timeout=60)
-                            return result
+                        future = asyncio.run_coroutine_threadsafe(
+                            wrapper_instance.call_tool(name, args_dict),
+                            wrapper_instance._loop
+                        )
+                        # Wait for the result with a timeout
+                        return future.result(timeout=60)
+                    except TimeoutError:
+                        return f"Tool {name} timed out after 60 seconds"
                     except Exception as e:
-                        return f"Error executing tool: {str(e)}"
+                        return f"Error executing tool {name}: {str(e)}"
 
                 return tool_func
 
@@ -151,6 +187,9 @@ class MCPToolWrapper:
 
         return langchain_tools
 
+
+# Global storage for active MCP wrappers to keep connections alive
+_active_wrappers = {}
 
 async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> List[Tool]:
     """
@@ -168,6 +207,15 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
         return []
 
     all_tools = []
+    global _active_wrappers
+    
+    # Clear any existing connections first
+    for wrapper in list(_active_wrappers.values()):
+        try:
+            await wrapper.disconnect()
+        except:
+            pass
+    _active_wrappers.clear()
 
     for server_name, config in servers_config.items():
         print(f"Connecting to MCP server: {server_name}...")
@@ -177,16 +225,17 @@ async def initialize_mcp_tools(servers_config: Dict[str, Dict[str, Any]]) -> Lis
             await wrapper.connect()
             tools = wrapper.get_langchain_tools()
             all_tools.extend(tools)
-            print(f"✓ Connected to {server_name}, loaded {len(tools)} tools")
+            
+            # Store the wrapper to keep the connection alive
+            _active_wrappers[server_name] = wrapper
+            
+            print(f"[OK] Connected to {server_name}, loaded {len(tools)} tools")
         except Exception as e:
-            print(f"✗ Failed to connect to {server_name}: {str(e)}")
+            print(f"[FAIL] Failed to connect to {server_name}: {str(e)}")
             # Try to clean up any partially initialized connections
             try:
                 await wrapper.disconnect()
             except:
                 pass  # Ignore cleanup errors
-            # Don't print full traceback for cleaner output
-            # import traceback
-            # traceback.print_exc()
 
     return all_tools

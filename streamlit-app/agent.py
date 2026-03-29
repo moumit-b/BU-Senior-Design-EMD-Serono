@@ -1,26 +1,29 @@
 """
-Agent module - Sets up a simple agent with Claude Sonnet 4.5 LLM and MCP tools.
+Agent module - Sets up a simple agent with configurable LLM and MCP tools.
 """
 
 from typing import List, Dict, Any, Optional, Tuple
 import json
 import re
 from langchain_core.tools import Tool
-from utils.llm_factory import get_llm
+from utils.llm_factory import get_llm_from_config
+from utils.terminal_logger import TerminalLoggerCallback
 from config import AGENT_MAX_ITERATIONS, AGENT_VERBOSE
 
 
 class MCPAgent:
-    """Simple agent that uses Claude Sonnet 4.5 and MCP tools."""
+    """Simple agent that uses configurable LLM and MCP tools."""
 
-    def __init__(self, tools: List[Tool]):
+    def __init__(self, tools: List[Tool], config_data: Optional[Dict[str, Any]] = None):
         """
         Initialize the MCP agent.
 
         Args:
             tools: List of LangChain tools (from MCP servers)
+            config_data: Configuration data from ConfigurationManager
         """
         self.tools = tools
+        self.config_data = config_data
         self.llm = None
         self.tools_dict = {tool.name: tool for tool in tools}
 
@@ -29,12 +32,22 @@ class MCPAgent:
     def _setup_agent(self):
         """Set up the LLM using the factory."""
         try:
-            self.llm = get_llm(temperature=0.7)
+            self._logger_callback = TerminalLoggerCallback()
+            if self.config_data:
+                # Use new configuration system
+                self.llm = get_llm_from_config(self.config_data, temperature=0.7)
+            else:
+                # Fallback to legacy method for backward compatibility
+                from utils.llm_factory import get_llm
+                self.llm = get_llm(temperature=0.7)
+                
         except ValueError as e:
-            raise ValueError(
-                f"Failed to initialize LLM: {e}\n"
-                "Make sure to set ANTHROPIC_API_KEY environment variable."
-            )
+            error_msg = f"Failed to initialize LLM: {e}"
+            if self.config_data and self.config_data.get("profile", {}).name == "merck":
+                error_msg += "\nMake sure to set AZURE_OPENAI_API_KEY or AZURE_API_KEY environment variable."
+            else:
+                error_msg += "\nMake sure to set ANTHROPIC_API_KEY environment variable."
+            raise ValueError(error_msg)
         except ImportError as e:
             raise ImportError(
                 f"Missing required package: {e}\n"
@@ -57,21 +70,27 @@ Answer:"""
             for tool in self.tools
         ])
 
-        return f"""You are a helpful AI assistant that can query chemical compound databases.
+        return f"""You are a Pharmaceutical Research AI Agent. You MUST use tools to provide accurate, data-driven answers.
 
-Available tools:
+AVAILABLE TOOLS:
 {tools_desc}
 
-When you need to use a tool, respond in this exact format:
+CRITICAL INSTRUCTIONS:
+1. ONLY use tools from the AVAILABLE TOOLS list above
+2. DO NOT use "think" or any other tools not listed above
+3. To use a tool, use this EXACT format:
 ACTION: tool_name
 INPUT: {{"parameter": "value"}}
 
-When you have the final answer, respond with:
-FINAL ANSWER: your answer here
+4. When you have enough information, use this EXACT format:
+FINAL ANSWER: your complete research summary here
+
+5. DO NOT provide conversational filler or reasoning steps
+6. Start with a tool call to gather information, then provide FINAL ANSWER
 
 Question: {question}
 
-Let's think step by step:"""
+Begin by selecting an appropriate tool from the available list:"""
 
     def _parse_action(self, text: str) -> Optional[Tuple[str, Dict[str, Any]]]:
         """Parse action and input from LLM response."""
@@ -117,7 +136,7 @@ Let's think step by step:"""
         # If no tools, use direct LLM mode
         if not self.tools:
             try:
-                response = self.llm.invoke(conversation)
+                response = self.llm.invoke(conversation, config={"callbacks": [self._logger_callback]})
                 answer = response.content if hasattr(response, 'content') else str(response)
                 return {
                     "output": answer,
@@ -131,11 +150,12 @@ Let's think step by step:"""
 
         # Tool-calling mode
         try:
+            no_action_count = 0  # Track consecutive responses with no tool call
             for iteration in range(AGENT_MAX_ITERATIONS):
                 if AGENT_VERBOSE:
                     print(f"\n=== Iteration {iteration + 1} ===")
 
-                response = self.llm.invoke(conversation)
+                response = self.llm.invoke(conversation, config={"callbacks": [self._logger_callback]})
                 response_text = response.content if hasattr(response, 'content') else str(response)
 
                 if AGENT_VERBOSE:
@@ -158,7 +178,14 @@ Let's think step by step:"""
                 action_result = self._parse_action(response_text)
 
                 if action_result:
+                    no_action_count = 0
                     action_name, action_input = action_result
+
+                    # Special handling for "think" tool attempts
+                    if action_name.lower() == "think":
+                        error_msg = f"ERROR: 'think' is not a valid tool. You must use one of the available tools: {', '.join(self.tools_dict.keys())}. Please select an actual tool to gather information."
+                        conversation += f"\n\n{response_text}\n\n{error_msg}\n\nSelect a real tool from the available list:"
+                        continue
 
                     if action_name in self.tools_dict:
                         tool = self.tools_dict[action_name]
@@ -174,11 +201,38 @@ Let's think step by step:"""
                             conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
                         except Exception as e:
                             observation = f"Error executing tool: {str(e)}"
-                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
+                            intermediate_steps.append((
+                                type('Action', (), {
+                                    'tool': action_name,
+                                    'tool_input': action_input
+                                })(),
+                                observation
+                            ))
+                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nPlease try a different approach or provide a FINAL ANSWER."
                     else:
-                        conversation += f"\n\n{response_text}\n\nError: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nWhat should I do next?"
+                        error_msg = f"Error: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nPlease use ONLY the tools listed above."
+                        conversation += f"\n\n{response_text}\n\n{error_msg}\n\nSelect a valid tool:"
                 else:
-                    conversation += f"\n\n{response_text}\n\nPlease either use a tool with ACTION/INPUT format or provide a FINAL ANSWER."
+                    no_action_count += 1
+                    # If the LLM gave a substantial response without ACTION or 
+                    # FINAL ANSWER markers, give it ONE nudge before giving up.
+                    # This prevents 1B models from "chatting" instead of doing research.
+                    if no_action_count >= 2:
+                        return {
+                            "output": response_text.strip(),
+                            "intermediate_steps": intermediate_steps
+                        }
+                    
+                    # If it's the first non-compliant response, nudge it to use the format
+                    conversation += f"\n\n{response_text}\n\nERROR: You did not follow the required ACTION/INPUT format or provide a FINAL ANSWER. Please use a tool to research the question."
+
+            # If we exhausted iterations but got tool results, synthesize them
+            if intermediate_steps:
+                last_observations = [obs for _, obs in intermediate_steps[-3:]]
+                return {
+                    "output": "\n\n".join(last_observations),
+                    "intermediate_steps": intermediate_steps
+                }
 
             return {
                 "output": "I apologize, but I couldn't find a complete answer within the iteration limit. Please try rephrasing your question.",
