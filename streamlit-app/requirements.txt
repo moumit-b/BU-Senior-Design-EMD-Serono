@@ -44,3 +44,6 @@ numpy>=1.24.0
 
 # Optional: PDF report export (requires system-level GTK/Cairo libraries)
 # weasyprint>=60.0
+
+# Tavily web search integration
+tavily-python

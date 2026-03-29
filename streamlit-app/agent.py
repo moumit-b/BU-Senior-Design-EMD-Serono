@@ -58,6 +58,8 @@ class MCPAgent:
         """Create a prompt for the LLM with available tools."""
         if not self.tools:
             return f"""You are a helpful AI assistant specialized in pharmaceutical research, chemistry, biology, and drug development.
+Prefer MCP tools for structured biomedical data such as literature, clinical trials, genes, and chemical information.
+Use tavily_web_search for recent web information, company updates, regulatory news, and competitive intelligence not available in MCP tools.
 
 Please answer the following question to the best of your knowledge:
 
