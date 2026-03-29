@@ -59,6 +59,7 @@ class MCPAgent:
         if not self.tools:
             return f"""You are a helpful AI assistant specialized in pharmaceutical research, chemistry, biology, and drug development.
 
+
 Please answer the following question to the best of your knowledge:
 
 Question: {question}
@@ -71,7 +72,8 @@ Answer:"""
         ])
 
         return f"""You are a Pharmaceutical Research AI Agent. You MUST use tools to provide accurate, data-driven answers.
-
+Prefer MCP tools for structured biomedical data such as literature, clinical trials, genes, and chemical information.
+Use a web tool if available for recent web information, company updates, regulatory news, and competitive intelligence not available in MCP tools.
 AVAILABLE TOOLS:
 {tools_desc}
 
@@ -80,7 +82,7 @@ CRITICAL INSTRUCTIONS:
 2. DO NOT use "think" or any other tools not listed above
 3. To use a tool, use this EXACT format:
 ACTION: tool_name
-INPUT: {{"parameter": "value"}}
+INPUT: {{"parameter": "value"}} or {{"query" : "value"}} for web searches
 
 4. When you have enough information, use this EXACT format:
 FINAL ANSWER: your complete research summary here

@@ -10,6 +10,7 @@ All MCP tool calls are mediated through the IBM Context Forge Gateway
 for governance, audit logging, compliance, and rate limiting.
 """
 
+import os
 import streamlit as st
 import asyncio
 from typing import Optional
@@ -18,7 +19,7 @@ from mcp_tools import initialize_mcp_tools, _active_wrappers
 from config_manager import config_manager
 from utils.llm_factory import validate_llm_setup
 from governance import ContextForgeGateway
-
+from utils.tavily_tool import get_tavily_tool
 
 # Page configuration
 st.set_page_config(
@@ -108,7 +109,18 @@ def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
                     st.info("Running in direct LLM mode without MCP tools")
             else:
                 st.info("Running in direct LLM mode without MCP tools")
-
+            
+            tavily_api_key = os.getenv("TAVILY_API_KEY")
+            if tavily_api_key:
+                try:
+                    tavily_tool = get_tavily_tool()
+                    tools.append(tavily_tool)
+                    st.info("Tavily web search enabled")
+                except Exception as tavily_error:
+                    st.warning(f"Tavily not available: {str(tavily_error)}")
+            else:
+                st.info("Tavily disabled: no TAVILY_API_KEY found")
+                    
             agent = MCPAgent(tools if tools else [], config_data)
             return agent
 
