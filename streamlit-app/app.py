@@ -19,7 +19,15 @@ from mcp_tools import initialize_mcp_tools, _active_wrappers
 from config_manager import config_manager
 from utils.llm_factory import validate_llm_setup
 from governance import ContextForgeGateway
-from utils.tavily_tool import get_tavily_tool
+try:
+    from utils.tavily_tool import get_tavily_tool
+except ImportError:
+    # Tavily is optional; define a placeholder that errors only when used.
+    def get_tavily_tool(*args, **kwargs):
+        raise RuntimeError(
+            "Tavily search functionality is not available because the "
+            "`tavily-python` dependency (or related modules) is not installed."
+        )
 
 # Page configuration
 st.set_page_config(
