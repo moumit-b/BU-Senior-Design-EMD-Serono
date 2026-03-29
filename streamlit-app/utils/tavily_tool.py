@@ -11,10 +11,22 @@ def tavily_search(tool_input: str) -> str:
 
     try:
         parsed = json.loads(tool_input)
-        query = parsed.get("query", "")
+        if isinstance(parsed, dict):
+            # Support both "query" and "parameter" keys for backward compatibility
+            query = parsed.get("query") or parsed.get("parameter") or ""
+        elif isinstance(parsed, str):
+            # JSON string input, e.g. `"foo"`
+            query = parsed
+        else:
+            # Unsupported JSON type (e.g. list, number)
+            query = ""
     except Exception:
+        # Not valid JSON; treat the raw input as the query
         query = tool_input
 
+    # Ensure we have a non-empty search query
+    if not query or not str(query).strip():
+        return json.dumps({"error": "Missing search query"})
     client = TavilyClient(api_key=api_key)
 
     response = client.search(
