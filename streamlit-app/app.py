@@ -126,8 +126,8 @@ def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
                     st.info("Tavily web search enabled")
                 except Exception as tavily_error:
                     st.warning(f"Tavily not available: {str(tavily_error)}")
-                else:
-                    st.info("Tavily disabled: no TAVILY_API_KEY found")
+            else:
+                st.info("Tavily disabled: no TAVILY_API_KEY found")
                     
             agent = MCPAgent(tools if tools else [], config_data)
             return agent
