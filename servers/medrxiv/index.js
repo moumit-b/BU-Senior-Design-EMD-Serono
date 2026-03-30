@@ -144,11 +144,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name, arguments: args = {} } = request.params;
 
   try {
     if (name === "search_medrxiv_preprints") {
-      const keywords = args.keywords;
+      const keywords = (args.keywords || "").trim();
+      if (!keywords) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: "keywords parameter is required and must not be blank" }, null, 2) }],
+          isError: true,
+        };
+      }
       const maxResults = Math.min(args.max_results || 10, 50);
 
       // Default date range: last 30 days
@@ -158,11 +164,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         args.start_date || thirtyDaysAgo.toISOString().split("T")[0];
       const endDate = args.end_date || now.toISOString().split("T")[0];
 
-      // Fetch preprints in the date range (fetch more than needed to filter)
-      const allItems = await fetchDateRange(startDate, endDate, 500);
+      // Fetch preprints in date range — scale fetch limit to maxResults
+      // (keyword filtering is client-side, so we need a multiple to find enough matches)
+      const fetchLimit = Math.min(maxResults * 10, 500);
+      const allItems = await fetchDateRange(startDate, endDate, fetchLimit);
 
       // Client-side keyword filtering on title + abstract
-      const lowerKeywords = keywords.toLowerCase().split(/\s+/);
+      const lowerKeywords = keywords.toLowerCase().split(/\s+/).filter(Boolean);
       const filtered = allItems.filter((item) => {
         const text = `${item.title || ""} ${item.abstract || ""}`.toLowerCase();
         return lowerKeywords.every((kw) => text.includes(kw));
@@ -202,7 +210,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_medrxiv_paper") {
       const doi = args.doi;
-      const url = `${MEDRXIV_API_BASE}/${doi}/na/json`;
+      const encodedDoi = encodeURIComponent(doi);
+      const url = `${MEDRXIV_API_BASE}/${encodedDoi}/na/json`;
       const data = await getJSON(url);
       const items = data?.collection || [];
 

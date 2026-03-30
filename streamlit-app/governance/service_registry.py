@@ -126,5 +126,6 @@ class ServiceRegistry:
             "duckdb": "Local DuckDB",
             "brave": "Brave Search",
             "playwright": "Web automation",
+            "medrxiv": "medRxiv (Cold Spring Harbor Laboratory)",
         }
         return data_sources.get(server_name, "Unknown")
