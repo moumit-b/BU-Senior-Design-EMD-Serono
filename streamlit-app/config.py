@@ -73,8 +73,8 @@ MCP_SERVERS = {
         "description": "medRxiv MCP server for medical preprint search and metadata"
     },
     "biorxiv": {
-        "command": "python",
-        "args": ["../servers/biorxiv/run_biorxiv.py"],
+        "command": "node",
+        "args": ["../servers/biorxiv/index.js"],
         "description": "bioRxiv MCP server for searching and retrieving preprint articles"
     }
 }

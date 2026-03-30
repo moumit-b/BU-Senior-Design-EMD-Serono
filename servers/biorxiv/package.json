@@ -1,0 +1,13 @@
+{
+  "name": "biorxiv-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for bioRxiv preprint search and metadata",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  }
+}
