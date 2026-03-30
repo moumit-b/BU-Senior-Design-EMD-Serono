@@ -76,6 +76,16 @@ MCP_SERVERS = {
         "command": "node",
         "args": ["../servers/biorxiv/index.js"],
         "description": "bioRxiv MCP server for searching and retrieving preprint articles"
+    },
+    "opentargets": {
+        "command": "node",
+        "args": ["../servers/opentargets/index.js"],
+        "description": "Open Targets Platform MCP server (Node.js) for target identification and prioritization"
+    },
+    "stringdb": {
+        "command": "node",
+        "args": ["../servers/stringdb/index.js"],
+        "description": "STRING-db MCP server (Node.js) for protein-protein interaction networks"
     }
 }
 

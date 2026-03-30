@@ -43,6 +43,8 @@ class LiteratureAgent(BaseAgent):
         return [
             "biomcp",           # PubMed/PubTator3
             "semanticscholar",  # Semantic Scholar
+            "opentargets",      # Target-disease literature evidence
+            "stringdb",           # Protein interaction evidence
             "medrxiv",          # medRxiv preprints
             "biorxiv",          # bioRxiv preprints
             "pubchem",          # Chemical literature refs
@@ -56,7 +58,8 @@ class LiteratureAgent(BaseAgent):
             "PubMed", "PMID", "DOI", "journal", "citation",
             "author", "abstract", "research", "review",
             "meta-analysis", "clinical study", "scientific",
-            "semantic scholar", "preprint", "biorxiv", "medrxiv", "patent", "preprint server"
+            "semantic scholar", "preprint", "biorxiv", "medrxiv", "patent", "preprint server",
+            "opentargets", "STRING"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
@@ -102,7 +105,7 @@ Focus on synthesizing scientific literature with accurate citations and evidence
 
             # Set confidence based on successful LLM response
             result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "semanticscholar", "biorxiv", "pubmed"]
+            result.mcps_used = ["biomcp", "semanticscholar", "biorxiv", "pubmed", "opentargets", "stringdb"]
             result.tools_used = ["llm_analysis", "literature_expertise"]
 
         except Exception as e:

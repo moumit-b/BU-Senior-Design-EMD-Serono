@@ -38,10 +38,11 @@ class ClinicalAgent(BaseAgent):
 
     def _define_preferred_mcps(self) -> List[str]:
         return [
-            "biomcp",     # Primary for trials and OpenFDA
-            "pubchem",    # Regulatory cross-references
-            "brave",      # News updates
-            "playwright"  # Dashboard access
+            "biomcp",      # Primary for trials and OpenFDA
+            "opentargets", # Drug-target associations & clinical evidence
+            "pubchem",     # Regulatory cross-references
+            "brave",       # News updates
+            "playwright"   # Dashboard access
         ]
 
     def _define_keywords(self) -> List[str]:
@@ -50,7 +51,8 @@ class ClinicalAgent(BaseAgent):
             "FDA", "approval", "regulatory", "label", "indication",
             "adverse event", "safety", "recall", "shortage",
             "intervention", "sponsor", "enrollment", "endpoint",
-            "protocol", "inclusion", "exclusion", "OpenFDA"
+            "protocol", "inclusion", "exclusion", "OpenFDA",
+            "opentargets", "target prioritization"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
@@ -95,7 +97,7 @@ Focus on current, accurate clinical and regulatory information."""
 
             # Set confidence based on successful LLM response
             result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "openfda"]
+            result.mcps_used = ["biomcp", "openfda", "opentargets"]
             result.tools_used = ["llm_analysis", "clinical_expertise"]
 
         except Exception as e:
