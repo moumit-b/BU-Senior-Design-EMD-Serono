@@ -41,6 +41,7 @@ class LiteratureAgent(BaseAgent):
         return [
             "biomcp",           # PubMed/PubTator3
             "semanticscholar",  # Semantic Scholar
+            "medrxiv",          # medRxiv preprints
             "pubchem",          # Chemical literature refs
             "brave",            # Web/news search
             "playwright"        # Site automation
@@ -52,7 +53,8 @@ class LiteratureAgent(BaseAgent):
             "PubMed", "PMID", "DOI", "journal", "citation",
             "author", "abstract", "research", "review",
             "meta-analysis", "clinical study", "scientific",
-            "semantic scholar", "preprint", "patent"
+            "semantic scholar", "preprint", "patent",
+            "medrxiv", "preprint server"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
@@ -65,7 +67,7 @@ class LiteratureAgent(BaseAgent):
             prompt = f"""You are a Scientific Literature Research Specialist with expertise in:
 - Biomedical and pharmaceutical research literature
 - Citation analysis and research impact assessment
-- PubMed and scientific database navigation
+- PubMed, medRxiv preprints, and scientific database navigation
 - Research methodology and study design evaluation
 - Meta-analysis and systematic review interpretation
 
@@ -79,7 +81,7 @@ Provide a comprehensive, evidence-based response. Include:
 3. Notable publications, authors, or research groups (if applicable)
 4. Study methodology and evidence quality (if relevant)
 5. Current state of research and knowledge gaps
-6. Relevant databases or PMIDs for further reference (PubMed, Semantic Scholar, etc.)
+6. Relevant databases or PMIDs for further reference (PubMed, medRxiv, Semantic Scholar, etc.)
 
 Focus on synthesizing scientific literature with accurate citations and evidence levels."""
 
