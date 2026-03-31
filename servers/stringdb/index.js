@@ -103,8 +103,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     if (name === "get_protein_interactions") {
       const { identifiers, species = 9606, required_score = 400 } = args;
+
+      // Validate identifiers: must be a non-empty array of non-empty strings
+      if (!Array.isArray(identifiers)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error:
+                    'Invalid "identifiers": expected a non-empty array of strings.',
+                  tool: name,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const cleanedIdentifiers = identifiers
+        .map((id) => (typeof id === "string" ? id.trim() : ""))
+        .filter((id) => id.length > 0);
+
+      if (cleanedIdentifiers.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error:
+                    'Invalid "identifiers": expected at least one non-empty string.',
+                  tool: name,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       const data = await getStringData("network", {
-        identifiers: identifiers.join("\n"),
+        identifiers: cleanedIdentifiers.join("\n"),
         species,
         required_score,
       });
