@@ -97,7 +97,7 @@ Focus on molecular biology insights with clinical and therapeutic relevance."""
 
             # Set confidence based on successful LLM response
             result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "opentargets", "stringdb", "mygene", "myvariant"]
+            result.mcps_used = ["biomcp", "opentargets", "stringdb"]
             result.tools_used = ["llm_analysis", "genetics_expertise"]
 
         except Exception as e:
