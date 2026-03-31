@@ -97,7 +97,7 @@ Focus on current, accurate clinical and regulatory information."""
 
             # Set confidence based on successful LLM response
             result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "openfda", "opentargets"]
+            result.mcps_used = ["biomcp", "opentargets"]
             result.tools_used = ["llm_analysis", "clinical_expertise"]
 
         except Exception as e:
