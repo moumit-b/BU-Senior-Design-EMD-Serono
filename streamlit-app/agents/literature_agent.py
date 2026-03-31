@@ -105,7 +105,7 @@ Focus on synthesizing scientific literature with accurate citations and evidence
 
             # Set confidence based on successful LLM response
             result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "semanticscholar", "biorxiv", "pubmed", "opentargets", "stringdb"]
+            result.mcps_used = ["biomcp", "semanticscholar", "biorxiv", "opentargets", "stringdb"]
             result.tools_used = ["llm_analysis", "literature_expertise"]
 
         except Exception as e:
