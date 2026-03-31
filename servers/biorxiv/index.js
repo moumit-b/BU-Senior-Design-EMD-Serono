@@ -209,6 +209,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_biorxiv_paper") {
       const doi = args.doi;
+
+      if (typeof doi !== "string" || doi.trim() === "") {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text:
+                'Missing required "doi" argument. Please provide a non-empty DOI.',
+            },
+          ],
+        };
+      }
       const encodedDoi = encodeURIComponent(doi);
       const url = `${BIORXIV_API_BASE}/${encodedDoi}/na/json`;
       const data = await getJSON(url);
