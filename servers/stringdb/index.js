@@ -115,9 +115,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_interaction_partners") {
       const { identifier, limit = 10, species = 9606 } = args;
+
+      // Validate identifier: must be a non-empty string
+      if (typeof identifier !== "string" || identifier.trim().length === 0) {
+        throw new Error(
+          'Invalid "identifier": expected a non-empty string.'
+        );
+      }
+
+      // Normalize and clamp limit to a reasonable integer range
+      let normalizedLimit = Number(limit);
+      if (!Number.isFinite(normalizedLimit)) {
+        normalizedLimit = 10;
+      }
+      normalizedLimit = Math.floor(normalizedLimit);
+      if (normalizedLimit < 1) {
+        normalizedLimit = 1;
+      } else if (normalizedLimit > 1000) {
+        normalizedLimit = 1000;
+      }
+
       const data = await getStringData("interaction_partners", {
-        identifiers: identifier,
-        limit,
+        identifiers: identifier.trim(),
+        limit: normalizedLimit,
         species,
       });
       return {
