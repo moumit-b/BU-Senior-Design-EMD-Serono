@@ -229,11 +229,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (items.length === 0) {
         return {
+          isError: true,
           content: [
             {
               type: "text",
               text: JSON.stringify(
-                { error: "No paper found with this DOI" },
+                { error: "No paper found with this DOI", doi },
                 null,
                 2
               ),
@@ -274,7 +275,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "get_recent_biorxiv") {
-      const count = Math.min(args.count || 10, 50);
+      const count = Math.max(1, Math.min(Math.floor(Number(args.count) || 10), 50));
       const category = args.category ? args.category.toLowerCase() : null;
 
       // Use date range: last 7 days

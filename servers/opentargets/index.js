@@ -30,6 +30,11 @@ async function queryOpenTargets(query, variables = {}) {
   return res.json();
 }
 
+function normalizeLimit(value, defaultValue = 10, min = 1, max = 100) {
+  const n = Number(value);
+  return Math.max(min, Math.min(Math.floor(Number.isFinite(n) ? n : defaultValue), max));
+}
+
 // Create server instance
 const server = new Server(
   {
@@ -115,6 +120,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     if (name === "search_opentargets") {
       const { query: queryString, entityNames = ["target", "disease", "drug"] } = args;
+      if (typeof queryString !== "string" || queryString.trim() === "") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { error: "Parameter 'query' must be a non-empty string.", tool: name },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
       const query = `
         query Search($queryString: String!, $entityNames: [String!]) {
           search(queryString: $queryString, entityNames: $entityNames) {
@@ -142,7 +162,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "get_target_associations") {
-      const { targetId, limit = 10 } = args;
+      const { targetId } = args;
+      const limit = normalizeLimit(args.limit);
       const query = `
         query Target($targetId: String!, $size: Int!) {
           target(ensemblId: $targetId) {
@@ -182,7 +203,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "get_disease_associations") {
-      const { diseaseId, limit = 10 } = args;
+      const { diseaseId } = args;
+      const limit = normalizeLimit(args.limit);
       const query = `
         query Disease($diseaseId: String!, $size: Int!) {
           disease(efoId: $diseaseId) {

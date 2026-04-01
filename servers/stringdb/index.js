@@ -149,10 +149,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      const normalizedRequiredScore = (() => {
+        const n = Number(required_score);
+        return Math.max(0, Math.min(Math.floor(Number.isFinite(n) ? n : 400), 1000));
+      })();
+
       const data = await getStringData("network", {
         identifiers: cleanedIdentifiers.join("\n"),
         species,
-        required_score,
+        required_score: normalizedRequiredScore,
       });
       return {
         content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
