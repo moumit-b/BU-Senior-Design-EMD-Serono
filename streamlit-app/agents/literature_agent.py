@@ -17,6 +17,7 @@ class LiteratureAgent(BaseAgent):
     Primary MCPs:
     - BioMCP (PubMed/PubTator3)
     - Semantic Scholar MCP
+    - bioRxiv (preprints)
     - PubChem (literature references)
     - Brave Search
     - Playwright
@@ -34,14 +35,18 @@ class LiteratureAgent(BaseAgent):
             "abstract_extraction",
             "paper_recommendation",
             "patent_search",
-            "preprint_search"
+            "preprint_search",
+            "biorxiv_search"
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
         return [
             "biomcp",           # PubMed/PubTator3
             "semanticscholar",  # Semantic Scholar
+            "opentargets",      # Target-disease literature evidence
+            "stringdb",           # Protein interaction evidence
             "medrxiv",          # medRxiv preprints
+            "biorxiv",          # bioRxiv preprints
             "pubchem",          # Chemical literature refs
             "brave",            # Web/news search
             "playwright"        # Site automation
@@ -53,8 +58,8 @@ class LiteratureAgent(BaseAgent):
             "PubMed", "PMID", "DOI", "journal", "citation",
             "author", "abstract", "research", "review",
             "meta-analysis", "clinical study", "scientific",
-            "semantic scholar", "preprint", "patent",
-            "medrxiv", "preprint server"
+            "semantic scholar", "preprint", "biorxiv", "medrxiv", "patent", "preprint server",
+            "opentargets", "STRING"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
@@ -66,6 +71,7 @@ class LiteratureAgent(BaseAgent):
             # Build specialized literature search prompt
             prompt = f"""You are a Scientific Literature Research Specialist with expertise in:
 - Biomedical and pharmaceutical research literature
+- Preprint analysis (bioRxiv, medRxiv) and early-stage research
 - Citation analysis and research impact assessment
 - PubMed, medRxiv preprints, and scientific database navigation
 - Research methodology and study design evaluation
@@ -78,12 +84,12 @@ Query: {task.query}
 Provide a comprehensive, evidence-based response. Include:
 1. Direct answer to the literature query
 2. Key research findings and scientific consensus
-3. Notable publications, authors, or research groups (if applicable)
+3. Notable publications, preprints, authors, or research groups (if applicable)
 4. Study methodology and evidence quality (if relevant)
 5. Current state of research and knowledge gaps
-6. Relevant databases or PMIDs for further reference (PubMed, medRxiv, Semantic Scholar, etc.)
+6. Relevant databases or PMIDs/DOIs for further reference (PubMed, medRxiv, bioRxiv, Semantic Scholar, etc.)
 
-Focus on synthesizing scientific literature with accurate citations and evidence levels."""
+Focus on synthesizing scientific literature with accurate citations and evidence levels. For preprints from bioRxiv, explicitly mention their preprint status."""
 
             # Call LLM for expert response
             response = self.llm.invoke(prompt)
@@ -99,7 +105,7 @@ Focus on synthesizing scientific literature with accurate citations and evidence
 
             # Set confidence based on successful LLM response
             result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "semanticscholar", "pubmed"]
+            result.mcps_used = ["biomcp", "semanticscholar", "biorxiv", "opentargets", "stringdb"]
             result.tools_used = ["llm_analysis", "literature_expertise"]
 
         except Exception as e:

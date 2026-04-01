@@ -37,9 +37,11 @@ class GeneAgent(BaseAgent):
 
     def _define_preferred_mcps(self) -> List[str]:
         return [
-            "biomcp",     # Gene/variant/disease data
-            "pubchem",    # Target-compound relationships
-            "playwright"  # Biology dashboards
+            "biomcp",      # Gene/variant/disease data
+            "opentargets", # Target prioritization
+            "stringdb",      # Protein-protein interactions
+            "pubchem",     # Target-compound relationships
+            "playwright"   # Biology dashboards
         ]
 
     def _define_keywords(self) -> List[str]:
@@ -48,7 +50,8 @@ class GeneAgent(BaseAgent):
             "mutation", "SNP", "HGVS", "chromosome", "locus",
             "pathway", "BRCA", "TP53", "EGFR", "expression",
             "druggability", "function", "ontology", "GO term",
-            "disease association", "MyGene", "UniProt"
+            "disease association", "MyGene", "UniProt",
+            "opentargets", "STRING", "protein interaction", "target prioritization"
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
@@ -94,7 +97,7 @@ Focus on molecular biology insights with clinical and therapeutic relevance."""
 
             # Set confidence based on successful LLM response
             result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "mygene", "myvariant"]
+            result.mcps_used = ["biomcp", "opentargets", "stringdb"]
             result.tools_used = ["llm_analysis", "genetics_expertise"]
 
         except Exception as e:

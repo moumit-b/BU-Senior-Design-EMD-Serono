@@ -127,5 +127,8 @@ class ServiceRegistry:
             "brave": "Brave Search",
             "playwright": "Web automation",
             "medrxiv": "medRxiv (Cold Spring Harbor Laboratory)",
+            "biorxiv": "bioRxiv (Cold Spring Harbor Laboratory)",
+            "opentargets": "Open Targets Platform (Target-Disease Associations)",
+            "stringdb": "STRING (Protein-Protein Interaction Networks)",
         }
         return data_sources.get(server_name, "Unknown")
