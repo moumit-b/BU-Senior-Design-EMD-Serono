@@ -402,44 +402,62 @@ def main():
 
     st.divider()
 
-    # Query interface
-    st.header("💬 Ask a Question")
-
+    # Initialize message history
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            if "steps" in message and message["steps"]:
-                display_intermediate_steps(message["steps"])
+    # Capture chat input at page level (outside columns) so it renders
+    # at the natural page bottom without Streamlit container issues.
+    prompt = st.chat_input("Ask about pharmaceutical research...")
 
-    if prompt := st.chat_input("Ask about pharmaceutical research..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    # --- Two-column layout: Chat (left) | Report Panel (right) ---
+    chat_col, report_col = st.columns([3, 2])
 
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    # ---- Left column: Chat interface ----
+    with chat_col:
+        st.header("Ask a Question")
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                result = agent.query(prompt)
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+                if "steps" in message and message["steps"]:
+                    display_intermediate_steps(message["steps"])
 
-                response = result.get("output", "No response generated")
-                st.markdown(response)
+        if prompt:
+            st.session_state.messages.append({"role": "user", "content": prompt})
 
-                steps = result.get("intermediate_steps", [])
-                if steps:
-                    display_intermediate_steps(steps)
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response,
-                    "steps": steps
-                })
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    result = agent.query(prompt)
 
-    if st.button("Clear Chat History"):
-        st.session_state.messages = []
-        st.rerun()
+                    response = result.get("output", "No response generated")
+                    st.markdown(response)
+
+                    steps = result.get("intermediate_steps", [])
+                    if steps:
+                        display_intermediate_steps(steps)
+
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": response,
+                        "steps": steps
+                    })
+
+        if st.button("Clear Chat History"):
+            st.session_state.messages = []
+            # Also clear report state tied to this conversation
+            st.session_state.pop("generated_report", None)
+            st.session_state.pop("identified_drug", None)
+            st.session_state.pop("drug_msg_count", None)
+            st.rerun()
+
+    # ---- Right column: Report generation panel ----
+    with report_col:
+        from ui.report_panel import render_report_panel
+        render_report_panel(agent)
 
 
 if __name__ == "__main__":
