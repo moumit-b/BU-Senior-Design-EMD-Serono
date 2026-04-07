@@ -7,6 +7,7 @@ Contains all specialized agents for the dual orchestration architecture:
 - LiteratureAgent: Scientific literature search
 - GeneAgent: Gene and target biology
 - DataAgent: Data analysis and statistics
+- ReportAgent: Structured report generation (EMD format)
 
 All agents inherit from BaseAgent and follow the same interface.
 """
@@ -17,6 +18,7 @@ from .clinical_agent import ClinicalAgent
 from .literature_agent import LiteratureAgent
 from .gene_agent import GeneAgent
 from .data_agent import DataAgent
+from .report_agent import ReportAgent
 
 __all__ = [
     "BaseAgent",
@@ -28,4 +30,5 @@ __all__ = [
     "LiteratureAgent",
     "GeneAgent",
     "DataAgent",
+    "ReportAgent",
 ]
