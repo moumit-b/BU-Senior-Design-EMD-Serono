@@ -4,9 +4,10 @@ Base Agent Abstract Class
 Defines the interface that all specialized agents must implement.
 """
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 
@@ -214,6 +215,51 @@ class BaseAgent(ABC):
             "capabilities": self.capabilities,
             "preferred_mcps": self.preferred_mcps
         }
+
+    # ------------------------------------------------------------------
+    # MCP tool helpers — used by subclasses to call real MCP tools
+    # ------------------------------------------------------------------
+
+    async def _call_mcp_tool(
+        self,
+        tool_name: str,
+        params: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Optional[Any], bool]:
+        """Call an MCP tool through the orchestrator with error handling.
+
+        Returns:
+            (result_data, success) — result_data is None on failure.
+        """
+        if self.mcp_orchestrator is None:
+            return None, False
+
+        try:
+            ctx = dict(context) if context else {}
+            ctx.setdefault("agent_id", self.agent_name)
+            result, feedback = await self.mcp_orchestrator.route_tool_call(
+                tool_name=tool_name,
+                params=params,
+                context=ctx,
+            )
+            return result, feedback.success
+        except Exception:
+            return None, False
+
+    async def _call_mcp_tools_parallel(
+        self,
+        calls: List[Tuple[str, Dict[str, Any]]],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> List[Tuple[Optional[Any], bool]]:
+        """Call multiple MCP tools in parallel.
+
+        Args:
+            calls: List of (tool_name, params) tuples.
+        Returns:
+            List of (result, success) tuples in the same order.
+        """
+        tasks = [self._call_mcp_tool(name, params, context) for name, params in calls]
+        return await asyncio.gather(*tasks)
 
     def __repr__(self):
         return f"<{self.agent_name}(capabilities={len(self.capabilities)}, tasks={self.successful_tasks + self.failed_tasks})>"

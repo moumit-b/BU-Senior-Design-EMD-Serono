@@ -1,24 +1,18 @@
 """
 Gene Agent
 
-Specializes in gene and target biology using BioMCP and PubChem.
-Handles 24+ tools for gene lookup, variant analysis, and target assessment.
+Specializes in gene and target biology using BioMCP, Open Targets, and STRING-db.
+Gathers real data from MCP servers, then synthesizes with LLM.
 """
 
+import json
 import time
 from typing import List, Dict, Any
 from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 
 
 class GeneAgent(BaseAgent):
-    """
-    Gene and target biology specialist agent.
-
-    Primary MCPs:
-    - BioMCP (MyGene, MyDisease, MyVariant, AlphaGenome)
-    - PubChem (target-based compound search)
-    - Playwright
-    """
+    """Gene and target biology specialist agent."""
 
     def __init__(self, mcp_orchestrator, llm=None):
         super().__init__("GeneAgent", mcp_orchestrator, llm)
@@ -31,18 +25,11 @@ class GeneAgent(BaseAgent):
             "biomarker_search",
             "target_assessment",
             "pathway_analysis",
-            "protein_annotation",
-            "functional_prediction"
+            "protein_interaction_analysis",
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return [
-            "biomcp",      # Gene/variant/disease data
-            "opentargets", # Target prioritization
-            "stringdb",      # Protein-protein interactions
-            "pubchem",     # Target-compound relationships
-            "playwright"   # Biology dashboards
-        ]
+        return ["biomcp", "opentargets", "stringdb"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -50,60 +37,101 @@ class GeneAgent(BaseAgent):
             "mutation", "SNP", "HGVS", "chromosome", "locus",
             "pathway", "BRCA", "TP53", "EGFR", "expression",
             "druggability", "function", "ontology", "GO term",
-            "disease association", "MyGene", "UniProt",
-            "opentargets", "STRING", "protein interaction", "target prioritization"
+            "disease association", "UniProt", "opentargets",
+            "STRING", "protein interaction",
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
-        """Process gene/target query using LLM expertise."""
+        """Process gene/target query using MCP tools + LLM synthesis."""
         start_time = time.time()
         result = AgentResult(task_id=task.task_id, agent_name=self.agent_name, success=True)
 
         try:
-            # Build specialized genetics and target biology prompt
-            prompt = f"""You are a Genetics and Target Biology Specialist with expertise in:
-- Gene structure, function, and regulation
-- Genetic variants and disease associations
-- Protein targets and druggability assessment
-- Molecular pathways and signaling networks
-- Biomarker identification and validation
+            drug_name = task.parameters.get("drug_name", task.query)
+            gene_name = task.parameters.get("gene_name", drug_name)
+            mcp_data: Dict[str, Any] = {}
+            actual_mcps: List[str] = []
+            actual_tools: List[str] = []
 
-Research Context: {context.research_goal if context.research_goal else "General genetics research"}
+            ctx = {
+                "agent_id": self.agent_name,
+                "query_type": "gene_lookup",
+                "query_text": task.query,
+                "session_id": context.session_id,
+                "user_id": context.user_id,
+            }
+
+            # Phase 1: Gather real data in parallel
+            parallel_calls = [
+                ("gene_getter", {"gene": gene_name}),
+                ("search_opentargets", {"queryString": gene_name}),
+                ("get_protein_interactions", {"identifiers": gene_name}),
+                ("nci_biomarker_searcher", {"query": gene_name}),
+                ("variant_searcher", {"gene": gene_name}),
+            ]
+            results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
+
+            tool_names = [c[0] for c in parallel_calls]
+            mcp_map = {
+                "gene_getter": "biomcp",
+                "search_opentargets": "opentargets",
+                "get_protein_interactions": "stringdb",
+                "nci_biomarker_searcher": "biomcp",
+                "variant_searcher": "biomcp",
+            }
+            for i, (data, ok) in enumerate(results):
+                if ok and data:
+                    mcp_data[tool_names[i]] = data
+                    actual_tools.append(tool_names[i])
+                    mcp = mcp_map.get(tool_names[i], "biomcp")
+                    if mcp not in actual_mcps:
+                        actual_mcps.append(mcp)
+
+            # Phase 2: Synthesize with LLM
+            if mcp_data:
+                data_str = json.dumps(mcp_data, indent=2, default=str)
+                if len(data_str) > 12000:
+                    data_str = data_str[:12000] + "\n... (truncated)"
+
+                prompt = f"""You are a Genetics and Target Biology Specialist. Analyze the following
+real data from biomedical databases.
 
 Query: {task.query}
+Research Context: {context.research_goal or "General genetics research"}
 
-Provide a detailed, scientifically accurate response. Include:
-1. Direct answer to the gene/target query
-2. Gene function and biological role (if applicable)
-3. Genetic variants or mutations of interest (if relevant)
-4. Disease associations and clinical significance
-5. Druggability and therapeutic potential (if applicable)
-6. Relevant pathways and molecular mechanisms
-7. Key databases or identifiers (MyGene, UniProt, HGVS, etc.)
+## Data from MCP Tools:
+{data_str}
 
-Focus on molecular biology insights with clinical and therapeutic relevance."""
+Synthesize this data into a comprehensive response covering gene function,
+variants, disease associations, protein interactions, biomarker potential,
+and druggability. Cite database sources (BioMCP, Open Targets, STRING-db)."""
+            else:
+                prompt = f"""You are a Genetics and Target Biology Specialist with expertise in gene
+function, variants, pathways, biomarkers, and druggability.
 
-            # Call LLM for expert response
+Research Context: {context.research_goal or "General genetics research"}
+Query: {task.query}
+
+Provide a detailed response covering gene biology, disease associations,
+and therapeutic potential."""
+
             response = self.llm.invoke(prompt)
-            answer = response.content if hasattr(response, 'content') else str(response)
+            answer = response.content if hasattr(response, "content") else str(response)
 
-            # Store result with structured data
             result.result_data = {
                 "answer": answer,
                 "agent": self.agent_name,
                 "query": task.query,
-                "expertise_area": "Genetics & Target Biology"
+                "mcp_data": mcp_data,
+                "data_sourced": bool(mcp_data),
+                "expertise_area": "Genetics & Target Biology",
             }
-
-            # Set confidence based on successful LLM response
-            result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "opentargets", "stringdb"]
-            result.tools_used = ["llm_analysis", "genetics_expertise"]
+            result.mcps_used = actual_mcps or ["llm_only"]
+            result.tools_used = actual_tools or ["llm_analysis"]
 
         except Exception as e:
             result.success = False
             result.error_message = f"GeneAgent error: {str(e)}"
-            result.confidence_score = 0.0
 
         result.execution_time = time.time() - start_time
         self.update_performance(result)

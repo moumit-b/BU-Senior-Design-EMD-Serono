@@ -1,27 +1,18 @@
 """
 Literature Agent
 
-Specializes in scientific literature search using BioMCP, Semantic Scholar, and PubMed.
-Handles 20+ tools for article search, citations, and literature analysis.
+Specializes in scientific literature search using BioMCP, PubMed, medRxiv, and bioRxiv.
+Gathers real data from MCP servers, then synthesizes with LLM.
 """
 
+import json
 import time
 from typing import List, Dict, Any
 from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 
 
 class LiteratureAgent(BaseAgent):
-    """
-    Scientific literature specialist agent.
-
-    Primary MCPs:
-    - BioMCP (PubMed/PubTator3)
-    - Semantic Scholar MCP
-    - bioRxiv (preprints)
-    - PubChem (literature references)
-    - Brave Search
-    - Playwright
-    """
+    """Scientific literature specialist agent."""
 
     def __init__(self, mcp_orchestrator, llm=None):
         super().__init__("LiteratureAgent", mcp_orchestrator, llm)
@@ -31,26 +22,12 @@ class LiteratureAgent(BaseAgent):
             "literature_search",
             "pubmed_query",
             "citation_analysis",
-            "author_profile_lookup",
             "abstract_extraction",
-            "paper_recommendation",
-            "patent_search",
             "preprint_search",
-            "biorxiv_search"
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return [
-            "biomcp",           # PubMed/PubTator3
-            "semanticscholar",  # Semantic Scholar
-            "opentargets",      # Target-disease literature evidence
-            "stringdb",           # Protein interaction evidence
-            "medrxiv",          # medRxiv preprints
-            "biorxiv",          # bioRxiv preprints
-            "pubchem",          # Chemical literature refs
-            "brave",            # Web/news search
-            "playwright"        # Site automation
-        ]
+        return ["biomcp", "literature", "medrxiv", "biorxiv"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -58,60 +35,97 @@ class LiteratureAgent(BaseAgent):
             "PubMed", "PMID", "DOI", "journal", "citation",
             "author", "abstract", "research", "review",
             "meta-analysis", "clinical study", "scientific",
-            "semantic scholar", "preprint", "biorxiv", "medrxiv", "patent", "preprint server",
-            "opentargets", "STRING"
+            "preprint", "biorxiv", "medrxiv",
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
-        """Process literature search query using LLM expertise."""
+        """Process literature query using MCP tools + LLM synthesis."""
         start_time = time.time()
         result = AgentResult(task_id=task.task_id, agent_name=self.agent_name, success=True)
 
         try:
-            # Build specialized literature search prompt
-            prompt = f"""You are a Scientific Literature Research Specialist with expertise in:
-- Biomedical and pharmaceutical research literature
-- Preprint analysis (bioRxiv, medRxiv) and early-stage research
-- Citation analysis and research impact assessment
-- PubMed, medRxiv preprints, and scientific database navigation
-- Research methodology and study design evaluation
-- Meta-analysis and systematic review interpretation
+            drug_name = task.parameters.get("drug_name", task.query)
+            mcp_data: Dict[str, Any] = {}
+            actual_mcps: List[str] = []
+            actual_tools: List[str] = []
 
-Research Context: {context.research_goal if context.research_goal else "General literature research"}
+            ctx = {
+                "agent_id": self.agent_name,
+                "query_type": "literature_search",
+                "query_text": task.query,
+                "session_id": context.session_id,
+                "user_id": context.user_id,
+            }
+
+            # Phase 1: Search across multiple literature sources in parallel
+            parallel_calls = [
+                ("article_searcher", {"keywords": [drug_name]}),
+                ("search_pubmed", {"query": drug_name}),
+                ("search_medrxiv_preprints", {"query": drug_name}),
+                ("search_biorxiv_preprints", {"query": drug_name}),
+            ]
+            results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
+
+            tool_names = [c[0] for c in parallel_calls]
+            mcp_map = {
+                "article_searcher": "biomcp",
+                "search_pubmed": "literature",
+                "search_medrxiv_preprints": "medrxiv",
+                "search_biorxiv_preprints": "biorxiv",
+            }
+            for i, (data, ok) in enumerate(results):
+                if ok and data:
+                    mcp_data[tool_names[i]] = data
+                    actual_tools.append(tool_names[i])
+                    mcp = mcp_map.get(tool_names[i], "biomcp")
+                    if mcp not in actual_mcps:
+                        actual_mcps.append(mcp)
+
+            # Phase 2: Synthesize with LLM
+            if mcp_data:
+                data_str = json.dumps(mcp_data, indent=2, default=str)
+                if len(data_str) > 12000:
+                    data_str = data_str[:12000] + "\n... (truncated)"
+
+                prompt = f"""You are a Scientific Literature Research Specialist. Analyze the following
+real search results from biomedical literature databases.
 
 Query: {task.query}
+Research Context: {context.research_goal or "General literature research"}
 
-Provide a comprehensive, evidence-based response. Include:
-1. Direct answer to the literature query
-2. Key research findings and scientific consensus
-3. Notable publications, preprints, authors, or research groups (if applicable)
-4. Study methodology and evidence quality (if relevant)
-5. Current state of research and knowledge gaps
-6. Relevant databases or PMIDs/DOIs for further reference (PubMed, medRxiv, bioRxiv, Semantic Scholar, etc.)
+## Literature Search Results:
+{data_str}
 
-Focus on synthesizing scientific literature with accurate citations and evidence levels. For preprints from bioRxiv, explicitly mention their preprint status."""
+Synthesize these results into a comprehensive literature review. Include
+key findings, notable publications (with PMIDs/DOIs), research trends,
+and knowledge gaps. Distinguish between peer-reviewed and preprint sources."""
+            else:
+                prompt = f"""You are a Scientific Literature Research Specialist with expertise in
+biomedical research, preprints, and citation analysis.
 
-            # Call LLM for expert response
+Research Context: {context.research_goal or "General literature research"}
+Query: {task.query}
+
+Provide a comprehensive literature review covering key publications,
+research trends, and knowledge gaps."""
+
             response = self.llm.invoke(prompt)
-            answer = response.content if hasattr(response, 'content') else str(response)
+            answer = response.content if hasattr(response, "content") else str(response)
 
-            # Store result with structured data
             result.result_data = {
                 "answer": answer,
                 "agent": self.agent_name,
                 "query": task.query,
-                "expertise_area": "Scientific Literature & Research"
+                "mcp_data": mcp_data,
+                "data_sourced": bool(mcp_data),
+                "expertise_area": "Scientific Literature & Research",
             }
-
-            # Set confidence based on successful LLM response
-            result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "semanticscholar", "biorxiv", "opentargets", "stringdb"]
-            result.tools_used = ["llm_analysis", "literature_expertise"]
+            result.mcps_used = actual_mcps or ["llm_only"]
+            result.tools_used = actual_tools or ["llm_analysis"]
 
         except Exception as e:
             result.success = False
             result.error_message = f"LiteratureAgent error: {str(e)}"
-            result.confidence_score = 0.0
 
         result.execution_time = time.time() - start_time
         self.update_performance(result)

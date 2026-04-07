@@ -96,12 +96,26 @@ def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
                     if _active_wrappers and governance_enabled:
                         gateway = ContextForgeGateway()
                         gateway.register_mcp_wrappers(_active_wrappers)
-                        # Store gateway in a way accessible to the rest of the app
                         st.session_state["gateway"] = gateway
+
+                        # Create MCPOrchestrator with gateway for specialized agents
+                        from orchestration.mcp_orchestrator import MCPOrchestrator
+                        mcp_orchestrator = MCPOrchestrator(mcp_wrappers=_active_wrappers)
+                        mcp_orchestrator.set_gateway(gateway)
+                        st.session_state["mcp_orchestrator"] = mcp_orchestrator
+
                         st.info(
                             f"Context Forge Gateway active: "
-                            f"{len(_active_wrappers)} MCP server(s) governed"
+                            f"{len(_active_wrappers)} MCP server(s) governed, "
+                            f"{len(mcp_orchestrator.get_all_tool_names())} tools indexed"
                         )
+
+                    elif _active_wrappers:
+                        # Orchestrator without governance (direct mode)
+                        from orchestration.mcp_orchestrator import MCPOrchestrator
+                        mcp_orchestrator = MCPOrchestrator(mcp_wrappers=_active_wrappers)
+                        st.session_state["mcp_orchestrator"] = mcp_orchestrator
+                        st.info(f"MCPOrchestrator active (no governance): {len(mcp_orchestrator.get_all_tool_names())} tools indexed")
 
                 except Exception as mcp_error:
                     st.warning(f"MCP servers not available: {str(mcp_error)}")
