@@ -271,7 +271,9 @@ class MCPOrchestrator:
         if not wrapper:
             raise ValueError(f"MCP {mcp_name} not found")
 
-        result = await wrapper.call_tool(tool_name, params)
+        # Use call_tool_safe to handle cross-event-loop scenarios
+        # (e.g., report generation runs on a different loop than MCP sessions)
+        result = await wrapper.call_tool_safe(tool_name, params)
         return result
 
     def _record_performance(

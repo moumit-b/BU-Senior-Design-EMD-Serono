@@ -225,6 +225,7 @@ class BaseAgent(ABC):
         tool_name: str,
         params: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
+        timeout: float = 60.0,
     ) -> Tuple[Optional[Any], bool]:
         """Call an MCP tool through the orchestrator with error handling.
 
@@ -237,12 +238,17 @@ class BaseAgent(ABC):
         try:
             ctx = dict(context) if context else {}
             ctx.setdefault("agent_id", self.agent_name)
-            result, feedback = await self.mcp_orchestrator.route_tool_call(
-                tool_name=tool_name,
-                params=params,
-                context=ctx,
+            result, feedback = await asyncio.wait_for(
+                self.mcp_orchestrator.route_tool_call(
+                    tool_name=tool_name,
+                    params=params,
+                    context=ctx,
+                ),
+                timeout=timeout,
             )
             return result, feedback.success
+        except asyncio.TimeoutError:
+            return None, False
         except Exception:
             return None, False
 
