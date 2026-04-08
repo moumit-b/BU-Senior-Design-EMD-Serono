@@ -4,9 +4,10 @@ Base Agent Abstract Class
 Defines the interface that all specialized agents must implement.
 """
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 
@@ -214,6 +215,82 @@ class BaseAgent(ABC):
             "capabilities": self.capabilities,
             "preferred_mcps": self.preferred_mcps
         }
+
+    # ------------------------------------------------------------------
+    # MCP tool helpers — used by subclasses to call real MCP tools
+    # ------------------------------------------------------------------
+
+    async def _call_mcp_tool(
+        self,
+        tool_name: str,
+        params: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+        timeout: float = 60.0,
+    ) -> Tuple[Optional[Any], bool]:
+        """Call an MCP tool through the orchestrator with error handling.
+
+        Respects a global semaphore (if set by ReportAgent) to limit
+        concurrent MCP calls and avoid flooding stdio-based MCP sessions.
+
+        Returns:
+            (result_data, success) — result_data is None on failure.
+        """
+        if self.mcp_orchestrator is None:
+            return None, False
+
+        # Import semaphore from report_agent if available (limits concurrency)
+        try:
+            from agents.report_agent import _MCP_SEMAPHORE
+        except ImportError:
+            _MCP_SEMAPHORE = None
+
+        try:
+            ctx = dict(context) if context else {}
+            ctx.setdefault("agent_id", self.agent_name)
+
+            async def _do_call():
+                if _MCP_SEMAPHORE is not None:
+                    async with _MCP_SEMAPHORE:
+                        return await self.mcp_orchestrator.route_tool_call(
+                            tool_name=tool_name, params=params, context=ctx,
+                        )
+                else:
+                    return await self.mcp_orchestrator.route_tool_call(
+                        tool_name=tool_name, params=params, context=ctx,
+                    )
+
+            result, feedback = await asyncio.wait_for(_do_call(), timeout=timeout)
+            return result, feedback.success
+        except asyncio.TimeoutError:
+            return None, False
+        except Exception:
+            return None, False
+
+    async def _call_mcp_tools_parallel(
+        self,
+        calls: List[Tuple[str, Dict[str, Any]]],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> List[Tuple[Optional[Any], bool]]:
+        """Call multiple MCP tools in parallel.
+
+        Args:
+            calls: List of (tool_name, params) tuples.
+        Returns:
+            List of (result, success) tuples in the same order.
+        """
+        tasks = [self._call_mcp_tool(name, params, context) for name, params in calls]
+        return await asyncio.gather(*tasks)
+
+    async def _invoke_llm(self, prompt: str) -> str:
+        """Invoke the LLM in a thread executor to avoid blocking the event loop.
+
+        This is critical when the agent runs inside asyncio.gather() alongside
+        MCP tool calls that use cross-loop scheduling (wrap_future).  A
+        synchronous llm.invoke() would block the loop and deadlock.
+        """
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(None, self.llm.invoke, prompt)
+        return response.content if hasattr(response, "content") else str(response)
 
     def __repr__(self):
         return f"<{self.agent_name}(capabilities={len(self.capabilities)}, tasks={self.successful_tasks + self.failed_tasks})>"

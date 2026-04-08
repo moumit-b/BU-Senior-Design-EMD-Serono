@@ -240,8 +240,9 @@ class ContextForgeGateway:
         # Refresh the heartbeat so ServiceRegistry knows this server is alive
         self.service_registry.update_heartbeat(server)
 
-        # Delegate to the MCPToolWrapper.call_tool (async)
-        result = await wrapper.call_tool(tool, parameters)
+        # Delegate to the MCPToolWrapper — use call_tool_safe to handle
+        # cross-event-loop scenarios (report generation runs on a separate loop)
+        result = await wrapper.call_tool_safe(tool, parameters)
         return result
 
     # ------------------------------------------------------------------

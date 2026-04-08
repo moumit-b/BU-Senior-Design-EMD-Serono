@@ -84,37 +84,52 @@ CRITICAL INSTRUCTIONS:
 ACTION: tool_name
 INPUT: {{"parameter": "value"}} or {{"query" : "value"}} for web searches
 
-4. When you have enough information, use this EXACT format:
+4. You may call UP TO 4 tools per response. Do NOT output more than 4 ACTION blocks.
+5. When you have enough information, use this EXACT format:
 FINAL ANSWER: your complete research summary here
 
-5. DO NOT provide conversational filler or reasoning steps
-6. Start with a tool call to gather information, then provide FINAL ANSWER
+6. DO NOT provide conversational filler or reasoning steps
+7. Start with a tool call to gather information, then provide FINAL ANSWER
 
 Question: {question}
 
 Begin by selecting an appropriate tool from the available list:"""
 
     def _parse_action(self, text: str) -> Optional[Tuple[str, Dict[str, Any]]]:
-        """Parse action and input from LLM response."""
-        action_match = re.search(r'ACTION:\s*(\w+)', text, re.IGNORECASE)
-        input_match = re.search(r'INPUT:\s*(\{[^}]+\})', text, re.IGNORECASE | re.DOTALL)
+        """Parse the first action and input from LLM response."""
+        actions = self._parse_all_actions(text)
+        return actions[0] if actions else None
 
-        if action_match and input_match:
-            action = action_match.group(1).strip()
-            try:
-                input_str = input_match.group(1).strip()
-                tool_input = json.loads(input_str)
-                return action, tool_input
-            except json.JSONDecodeError:
-                input_text = input_match.group(1).strip()
-                if '"' in input_text:
-                    parts = input_text.split('"')
-                    if len(parts) >= 4:
-                        key = parts[1]
-                        value = parts[3]
-                        return action, {key: value}
+    def _parse_all_actions(self, text: str) -> List[Tuple[str, Dict[str, Any]]]:
+        """Parse ALL action/input pairs from LLM response.
 
-        return None
+        The LLM often outputs multiple ACTION: blocks in one response.
+        This method extracts every valid pair.
+        """
+        # Split on ACTION: boundaries to isolate each block
+        blocks = re.split(r'(?=ACTION:\s*\w+)', text, flags=re.IGNORECASE)
+        results = []
+
+        for block in blocks:
+            action_match = re.search(r'ACTION:\s*(\w+)', block, re.IGNORECASE)
+            input_match = re.search(r'INPUT:\s*(\{[^}]+\})', block, re.IGNORECASE | re.DOTALL)
+
+            if action_match and input_match:
+                action = action_match.group(1).strip()
+                try:
+                    input_str = input_match.group(1).strip()
+                    tool_input = json.loads(input_str)
+                    results.append((action, tool_input))
+                except json.JSONDecodeError:
+                    input_text = input_match.group(1).strip()
+                    if '"' in input_text:
+                        parts = input_text.split('"')
+                        if len(parts) >= 4:
+                            key = parts[1]
+                            value = parts[3]
+                            results.append((action, {key: value}))
+
+        return results
 
     def query(self, question: str) -> Dict[str, Any]:
         """
@@ -176,23 +191,26 @@ Begin by selecting an appropriate tool from the available list:"""
                             "intermediate_steps": intermediate_steps
                         }
 
-                # Try to parse action
-                action_result = self._parse_action(response_text)
+                # Try to parse ALL actions from the response (cap at 5 to avoid flooding)
+                all_actions = self._parse_all_actions(response_text)[:5]
 
-                if action_result:
+                if all_actions:
                     no_action_count = 0
-                    action_name, action_input = action_result
 
-                    # Special handling for "think" tool attempts
-                    if action_name.lower() == "think":
-                        error_msg = f"ERROR: 'think' is not a valid tool. You must use one of the available tools: {', '.join(self.tools_dict.keys())}. Please select an actual tool to gather information."
-                        conversation += f"\n\n{response_text}\n\n{error_msg}\n\nSelect a real tool from the available list:"
-                        continue
+                    # Execute every valid action the LLM requested
+                    observations = []
+                    for action_name, action_input in all_actions:
+                        # Skip "think" tool
+                        if action_name.lower() == "think":
+                            continue
 
-                    if action_name in self.tools_dict:
-                        tool = self.tools_dict[action_name]
-                        try:
-                            observation = tool.func(json.dumps(action_input))
+                        if action_name in self.tools_dict:
+                            tool = self.tools_dict[action_name]
+                            try:
+                                observation = tool.func(json.dumps(action_input))
+                            except Exception as e:
+                                observation = f"Error executing tool: {str(e)}"
+
                             intermediate_steps.append((
                                 type('Action', (), {
                                     'tool': action_name,
@@ -200,20 +218,16 @@ Begin by selecting an appropriate tool from the available list:"""
                                 })(),
                                 observation
                             ))
-                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nWhat should I do next?"
-                        except Exception as e:
-                            observation = f"Error executing tool: {str(e)}"
-                            intermediate_steps.append((
-                                type('Action', (), {
-                                    'tool': action_name,
-                                    'tool_input': action_input
-                                })(),
-                                observation
-                            ))
-                            conversation += f"\n\n{response_text}\n\nOBSERVATION: {observation}\n\nPlease try a different approach or provide a FINAL ANSWER."
+                            observations.append(f"[{action_name}] {observation}")
+                        else:
+                            observations.append(f"[{action_name}] Error: Tool not found. Available: {', '.join(self.tools_dict.keys())}")
+
+                    if observations:
+                        obs_block = "\n\n".join(observations)
+                        conversation += f"\n\n{response_text}\n\nOBSERVATIONS:\n{obs_block}\n\nBased on these results, provide a FINAL ANSWER with a comprehensive summary."
                     else:
-                        error_msg = f"Error: Tool '{action_name}' not found. Available tools: {', '.join(self.tools_dict.keys())}\n\nPlease use ONLY the tools listed above."
-                        conversation += f"\n\n{response_text}\n\n{error_msg}\n\nSelect a valid tool:"
+                        error_msg = f"ERROR: 'think' is not a valid tool. Use one of: {', '.join(self.tools_dict.keys())}"
+                        conversation += f"\n\n{response_text}\n\n{error_msg}\n\nSelect a real tool:"
                 else:
                     no_action_count += 1
                     # If the LLM gave a substantial response without ACTION or 

@@ -15,12 +15,28 @@ governance, audit, and compliance (IBM Context Forge pattern).
 import asyncio
 import time
 from typing import Dict, Any, Optional, List, Tuple
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import json
 from collections import defaultdict
 
-from models.performance import MCPPerformance, PerformanceFeedback
+from models.performance import PerformanceFeedback
 from utils.cache import MultiLevelCache
+
+
+# ---------------------------------------------------------------------------
+# Internal performance tracker (lightweight, matches orchestrator's usage)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _MCPTracker:
+    """Internal performance tracking for a single MCP server."""
+    mcp_name: str
+    total_calls: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    avg_latency_ms: float = 0.0
+    query_type_performance: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class MCPOrchestrator:
@@ -48,7 +64,7 @@ class MCPOrchestrator:
         self._gateway = None
 
         # Performance tracking (Novel Feature 1: Bidirectional Learning)
-        self.performance_data: Dict[str, MCPPerformance] = {}
+        self.performance_data: Dict[str, _MCPTracker] = {}
         self.query_patterns: Dict[str, List[str]] = defaultdict(list)  # keyword -> [mcp_names]
 
         # Health monitoring
@@ -57,23 +73,34 @@ class MCPOrchestrator:
 
         # Initialize performance tracking for each MCP
         for mcp_name in mcp_wrappers.keys():
-            self.performance_data[mcp_name] = MCPPerformance(
-                mcp_id=mcp_name,
-                total_calls=0,
-                success_count=0,
-                failure_count=0,
-                avg_latency_ms=0,
-                query_type_performance={}
-            )
+            self.performance_data[mcp_name] = _MCPTracker(mcp_name=mcp_name)
+
+        # Build tool_name -> [server_names] index from wrapper tool caches
+        self._tool_to_servers: Dict[str, List[str]] = {}
+        for server_name, wrapper in mcp_wrappers.items():
+            for mcp_tool in getattr(wrapper, "_tools_cache", []):
+                tool_name = getattr(mcp_tool, "name", str(mcp_tool))
+                self._tool_to_servers.setdefault(tool_name, []).append(server_name)
 
     def set_gateway(self, gateway):
-        """
-        Attach a ContextForgeGateway to mediate all tool calls.
-
-        Args:
-            gateway: A governance.gateway.ContextForgeGateway instance.
-        """
+        """Attach a ContextForgeGateway to mediate all tool calls."""
         self._gateway = gateway
+
+    # ------------------------------------------------------------------
+    # Tool discovery helpers
+    # ------------------------------------------------------------------
+
+    def get_available_tools_for_server(self, server_name: str) -> List[str]:
+        """Return tool names available on a specific server."""
+        return [t for t, servers in self._tool_to_servers.items() if server_name in servers]
+
+    def get_all_tool_names(self) -> List[str]:
+        """Return all tool names across all connected servers."""
+        return list(self._tool_to_servers.keys())
+
+    # ------------------------------------------------------------------
+    # Core routing
+    # ------------------------------------------------------------------
 
     async def route_tool_call(
         self,
@@ -83,8 +110,6 @@ class MCPOrchestrator:
     ) -> Tuple[Any, PerformanceFeedback]:
         """
         Route a tool call to the optimal MCP server.
-
-        Novel Feature: Considers agent preferences and historical performance.
 
         Args:
             tool_name: Name of the tool to call
@@ -118,7 +143,7 @@ class MCPOrchestrator:
                 source='error',
                 latency_ms=0,
                 success=False,
-                recommendation="No MCP available for this tool"
+                recommendation=f"No MCP server found with tool '{tool_name}'"
             )
 
         # Execute tool call with performance tracking
@@ -163,30 +188,24 @@ class MCPOrchestrator:
         """
         Select the optimal MCP based on learned patterns.
 
-        Novel Feature: This is where bidirectional learning happens!
-        We consider:
-        1. Historical performance for this query type
-        2. Keyword patterns (learned from past successes)
-        3. Agent preferences (some agents work better with certain MCPs)
+        Only considers servers that actually have the requested tool.
         """
-        # Find MCPs that have this tool
-        candidate_mcps = []
-        for mcp_name, wrapper in self.mcp_wrappers.items():
-            # Check if MCP is healthy
-            if not self.health_status.get(mcp_name, False):
-                continue
-
-            # Check if MCP has this tool (simplified - assumes tools have mcp_name in them)
-            candidate_mcps.append(mcp_name)
+        # Only consider servers that actually expose this tool AND are healthy
+        candidate_servers = self._tool_to_servers.get(tool_name, [])
+        candidate_mcps = [s for s in candidate_servers if self.health_status.get(s, False)]
 
         if not candidate_mcps:
             return None
+
+        # If only one candidate, return it directly
+        if len(candidate_mcps) == 1:
+            return candidate_mcps[0]
 
         # Score each candidate based on learned performance
         scores = {}
         for mcp_name in candidate_mcps:
             perf = self.performance_data.get(mcp_name)
-            if not perf:
+            if not perf or perf.total_calls == 0:
                 scores[mcp_name] = 0.5  # Neutral score for unknown MCP
                 continue
 
@@ -221,9 +240,6 @@ class MCPOrchestrator:
     ) -> Any:
         """
         Call the MCP tool — routed through the ContextForgeGateway when available.
-
-        If no gateway is attached, falls back to direct wrapper invocation
-        (preserving backward compatibility).
         """
         # --- Gateway-mediated path (IBM Context Forge) ---
         if self._gateway is not None:
@@ -255,7 +271,9 @@ class MCPOrchestrator:
         if not wrapper:
             raise ValueError(f"MCP {mcp_name} not found")
 
-        result = await wrapper.call_tool(tool_name, params)
+        # Use call_tool_safe to handle cross-event-loop scenarios
+        # (e.g., report generation runs on a different loop than MCP sessions)
+        result = await wrapper.call_tool_safe(tool_name, params)
         return result
 
     def _record_performance(
@@ -266,29 +284,20 @@ class MCPOrchestrator:
         success: bool,
         keywords: List[str]
     ):
-        """
-        Record performance data for learning.
-
-        Novel Feature: This data is used to teach agents which MCPs work best.
-        """
+        """Record performance data for learning."""
         perf = self.performance_data.get(mcp_name)
         if not perf:
             return
 
-        # Update overall stats
         perf.total_calls += 1
         if success:
             perf.success_count += 1
-
-            # Learn keyword patterns (if successful, associate keywords with this MCP)
             for keyword in keywords:
                 if mcp_name not in self.query_patterns[keyword]:
                     self.query_patterns[keyword].append(mcp_name)
         else:
             perf.failure_count += 1
             self.circuit_breaker[mcp_name] = self.circuit_breaker.get(mcp_name, 0) + 1
-
-            # Circuit breaker: disable MCP if too many failures
             if self.circuit_breaker[mcp_name] > 5:
                 self.health_status[mcp_name] = False
 
@@ -321,24 +330,17 @@ class MCPOrchestrator:
         latency_ms: float,
         success: bool
     ) -> PerformanceFeedback:
-        """
-        Generate feedback for the agent layer.
-
-        Novel Feature: This is how MCPs teach agents!
-        """
+        """Generate feedback for the agent layer."""
         perf = self.performance_data.get(mcp_name)
         recommendation = ""
 
         if success and perf:
-            # Success - check if this MCP is optimal
             qt_success_rate = perf.query_type_performance.get(query_type, {}).get('success_rate', 0)
             if qt_success_rate > 0.8:
                 recommendation = f"{mcp_name} is excellent for {query_type} queries (success rate: {qt_success_rate:.0%})"
             else:
                 recommendation = f"{mcp_name} worked but success rate for {query_type} is only {qt_success_rate:.0%}"
         else:
-            # Failure - suggest alternatives
-            # Find best alternative for this query type
             best_alt = None
             best_rate = 0
             for other_mcp, other_perf in self.performance_data.items():
@@ -363,19 +365,15 @@ class MCPOrchestrator:
         )
 
     def get_performance_insights(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Get performance insights to share with agent layer.
-
-        Novel Feature: Agents can query this to learn which MCPs to prefer.
-        """
+        """Get performance insights to share with agent layer."""
         insights = {
             'mcp_rankings': {},
             'query_type_recommendations': {},
             'keyword_patterns': dict(self.query_patterns),
-            'health_status': dict(self.health_status)
+            'health_status': dict(self.health_status),
+            'tool_index': {t: s for t, s in self._tool_to_servers.items()},
         }
 
-        # Rank MCPs by overall performance
         mcp_scores = []
         for mcp_name, perf in self.performance_data.items():
             if perf.total_calls == 0:
@@ -385,7 +383,6 @@ class MCPOrchestrator:
 
         insights['mcp_rankings'] = sorted(mcp_scores, key=lambda x: x[1], reverse=True)
 
-        # Recommendations by query type
         query_types = set()
         for perf in self.performance_data.values():
             query_types.update(perf.query_type_performance.keys())

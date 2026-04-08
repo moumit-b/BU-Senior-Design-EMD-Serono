@@ -2,24 +2,17 @@
 Clinical Agent
 
 Specializes in clinical trials and regulatory data using BioMCP and OpenFDA.
-Handles 30+ tools for trial search, regulatory info, adverse events, and approvals.
+Gathers real data from MCP servers, then synthesizes with LLM.
 """
 
+import json
 import time
 from typing import List, Dict, Any
 from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 
 
 class ClinicalAgent(BaseAgent):
-    """
-    Clinical trials and regulatory specialist agent.
-
-    Primary MCPs:
-    - BioMCP (ClinicalTrials.gov, NCI CTS, OpenFDA)
-    - PubChem (regulatory info)
-    - Brave Search
-    - Playwright
-    """
+    """Clinical trials and regulatory specialist agent."""
 
     def __init__(self, mcp_orchestrator, llm=None):
         super().__init__("ClinicalAgent", mcp_orchestrator, llm)
@@ -32,18 +25,10 @@ class ClinicalAgent(BaseAgent):
             "adverse_event_analysis",
             "drug_approval_lookup",
             "intervention_search",
-            "disease_vocabulary_mapping",
-            "drug_shortage_monitoring"
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return [
-            "biomcp",      # Primary for trials and OpenFDA
-            "opentargets", # Drug-target associations & clinical evidence
-            "pubchem",     # Regulatory cross-references
-            "brave",       # News updates
-            "playwright"   # Dashboard access
-        ]
+        return ["biomcp", "opentargets"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -51,59 +36,93 @@ class ClinicalAgent(BaseAgent):
             "FDA", "approval", "regulatory", "label", "indication",
             "adverse event", "safety", "recall", "shortage",
             "intervention", "sponsor", "enrollment", "endpoint",
-            "protocol", "inclusion", "exclusion", "OpenFDA",
-            "opentargets", "target prioritization"
+            "protocol", "OpenFDA", "opentargets",
         ]
 
     async def process(self, task: AgentTask, context: AgentContext) -> AgentResult:
-        """Process clinical/regulatory query using LLM expertise."""
+        """Process clinical/regulatory query using MCP tools + LLM synthesis."""
         start_time = time.time()
         result = AgentResult(task_id=task.task_id, agent_name=self.agent_name, success=True)
 
         try:
-            # Build specialized clinical trials prompt
-            prompt = f"""You are a Clinical Trials and Regulatory Affairs Specialist with expertise in:
-- Clinical trial design and protocol analysis
-- FDA regulatory processes and drug approvals
-- Adverse event monitoring and pharmacovigilance
-- Clinical study phases and endpoints
-- Drug labeling and safety information
+            drug_name = task.parameters.get("drug_name", task.query)
+            mcp_data: Dict[str, Any] = {}
+            actual_mcps: List[str] = []
+            actual_tools: List[str] = []
 
-Research Context: {context.research_goal if context.research_goal else "General clinical research"}
+            ctx = {
+                "agent_id": self.agent_name,
+                "query_type": "clinical_trial",
+                "query_text": task.query,
+                "session_id": context.session_id,
+                "user_id": context.user_id,
+            }
+
+            # Phase 1: Gather real data in parallel
+            parallel_calls = [
+                ("trial_searcher", {"interventions": drug_name}),
+                ("openfda_adverse_searcher", {"drug": drug_name}),
+                ("openfda_approval_searcher", {"drug": drug_name}),
+                ("openfda_label_searcher", {"drug": drug_name}),
+                ("nci_intervention_searcher", {"query": drug_name}),
+                ("disease_getter", {"disease": task.parameters.get("indication", drug_name)}),
+            ]
+            results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
+
+            tool_names = [c[0] for c in parallel_calls]
+            for i, (data, ok) in enumerate(results):
+                if ok and data:
+                    mcp_data[tool_names[i]] = data
+                    actual_tools.append(tool_names[i])
+                    actual_mcps.append("biomcp")
+
+            # Deduplicate
+            actual_mcps = list(set(actual_mcps))
+
+            # Phase 2: Synthesize with LLM
+            if mcp_data:
+                data_str = json.dumps(mcp_data, indent=2, default=str)
+                if len(data_str) > 12000:
+                    data_str = data_str[:12000] + "\n... (truncated)"
+
+                prompt = f"""You are a Clinical Trials and Regulatory Affairs Specialist. Analyze the
+following real data from clinical and regulatory databases.
 
 Query: {task.query}
+Research Context: {context.research_goal or "General clinical research"}
 
-Provide a detailed, evidence-based response. Include:
-1. Direct answer to the clinical/regulatory query
-2. Relevant clinical trial information (phases, endpoints, status if applicable)
-3. Regulatory context (FDA approvals, indications, safety data if relevant)
-4. Adverse events or safety considerations (if applicable)
-5. Clinical significance and implications
-6. Key databases or NCT numbers for reference (ClinicalTrials.gov, OpenFDA, etc.)
+## Data from MCP Tools:
+{data_str}
 
-Focus on current, accurate clinical and regulatory information."""
+Synthesize this data into a comprehensive clinical/regulatory response.
+Include trial phases, NCT numbers, regulatory status, adverse events,
+and approval history. Cite database sources for each fact."""
+            else:
+                prompt = f"""You are a Clinical Trials and Regulatory Affairs Specialist with expertise
+in trial design, FDA processes, adverse events, and drug approvals.
 
-            # Call LLM for expert response
-            response = self.llm.invoke(prompt)
-            answer = response.content if hasattr(response, 'content') else str(response)
+Research Context: {context.research_goal or "General clinical research"}
+Query: {task.query}
 
-            # Store result with structured data
+Provide a detailed, evidence-based response covering clinical trial data,
+regulatory context, and safety considerations."""
+
+            answer = await self._invoke_llm(prompt)
+
             result.result_data = {
                 "answer": answer,
                 "agent": self.agent_name,
                 "query": task.query,
-                "expertise_area": "Clinical Trials & Regulatory Affairs"
+                "mcp_data": mcp_data,
+                "data_sourced": bool(mcp_data),
+                "expertise_area": "Clinical Trials & Regulatory Affairs",
             }
-
-            # Set confidence based on successful LLM response
-            result.confidence_score = 0.85
-            result.mcps_used = ["biomcp", "opentargets"]
-            result.tools_used = ["llm_analysis", "clinical_expertise"]
+            result.mcps_used = actual_mcps or ["llm_only"]
+            result.tools_used = actual_tools or ["llm_analysis"]
 
         except Exception as e:
             result.success = False
             result.error_message = f"ClinicalAgent error: {str(e)}"
-            result.confidence_score = 0.0
 
         result.execution_time = time.time() - start_time
         self.update_performance(result)

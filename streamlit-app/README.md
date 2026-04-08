@@ -1,10 +1,14 @@
 # Pharmaceutical Research Intelligence System
 
-A multi-agent orchestration system powered by **Claude Sonnet 4.5** for pharmaceutical research. Uses LangChain, LangGraph, and MCP (Model Context Protocol) servers to coordinate five specialized AI agents for chemistry, clinical trials, literature, genetics, and data analysis.
+A multi-agent orchestration system for pharmaceutical research powered by **Model Context Protocol (MCP)** servers and **Claude Sonnet 4.5**. Specialized AI agents gather real data from biomedical databases (PubMed, ClinicalTrials.gov, Open Targets, PubChem, STRING-db, medRxiv, bioRxiv), then synthesize expert analysis. All MCP tool calls flow through the **Context Forge Gateway** for governance, audit logging, compliance, and rate limiting.
 
 ---
 
 ## Architecture Overview
+
+The system has two primary execution paths: **Chat** (interactive Q&A) and **Report Generation** (structured EMD-format reports). Both share the same MCP infrastructure and specialized agents.
+
+### Chat Path (Interactive Q&A)
 
 ```
 User Query
@@ -13,22 +17,219 @@ User Query
 Streamlit UI (app.py)
     |
     v
-LangGraph Orchestrator (orchestrator_agent.py)
-    |--- analyze_query -> extract keywords, determine complexity
-    |--- create_plan   -> parallel vs sequential strategy
-    |--- assign_agents -> select best agents by confidence score
-    |--- execute_tasks -> run agent processes
-    |--- synthesize    -> Claude combines all results
-    |--- validate      -> governance compliance check
+MCPAgent (agent.py) — LangChain tool-calling loop
     |
-    +---> ChemicalAgent   (PubChem, ChEMBL, BioMCP)
-    +---> ClinicalAgent   (BioMCP, OpenFDA)
-    +---> LiteratureAgent (BioMCP, Semantic Scholar)
-    +---> GeneAgent       (BioMCP, MyGene, MyVariant)
-    +---> DataAgent       (Jupyter, DuckDB)
+    +---> MCP Tools (via LangChain StructuredTool wrappers)
+    |         |
+    |         v
+    |     Context Forge Gateway (governance/gateway.py)
+    |         |
+    |         v
+    |     MCP Servers: BioMCP, PubChem, Literature, Open Targets,
+    |                  STRING-db, medRxiv, bioRxiv
+    |
+    v
+Claude Sonnet 4.5 synthesizes tool results into response
 ```
 
-All agents and the orchestrator use **Claude Sonnet 4.5** (`claude-sonnet-4-5-20250514`) as their LLM via a centralized factory (`utils/llm_factory.py`).
+### Report Generation Path (Multi-Agent Orchestration)
+
+```
+User clicks "Generate Report" in Report Panel
+    |
+    v
+report_panel.py retrieves MCPOrchestrator from session state
+    |
+    v
+ReportAgent (agents/report_agent.py)
+    |
+    |--- Creates 5 specialized agent instances (shared MCP orchestrator + LLM)
+    |--- Maps 18 EMD sections to relevant agents
+    |--- Dispatches ALL 18 sections in parallel (asyncio.gather)
+    |
+    |   For each section (e.g., Section 9: Competitive Landscape):
+    |       |
+    |       v
+    |   _gather_agent_data() — dispatches to mapped agents IN PARALLEL
+    |       |
+    |       +---> ClinicalAgent.process()
+    |       |         |--- _call_mcp_tools_parallel():
+    |       |         |       trial_searcher, openfda_adverse_searcher,
+    |       |         |       openfda_approval_searcher, openfda_label_searcher,
+    |       |         |       nci_intervention_searcher, disease_getter
+    |       |         |--- LLM synthesizes MCP data into expert analysis
+    |       |         +---> AgentResult { mcp_data, mcps_used, answer }
+    |       |
+    |       +---> ChemicalAgent.process()
+    |       |         |--- _call_mcp_tools_parallel():
+    |       |         |       search_compounds_by_name, drug_getter,
+    |       |         |       openfda_label_searcher
+    |       |         +---> AgentResult { mcp_data, mcps_used, answer }
+    |       |
+    |       +---> LiteratureAgent.process()
+    |                 |--- _call_mcp_tools_parallel():
+    |                 |       article_searcher, search_pubmed,
+    |                 |       search_medrxiv_preprints, search_biorxiv_preprints
+    |                 +---> AgentResult { mcp_data, mcps_used, answer }
+    |       |
+    |       v
+    |   _synthesize_section() — LLM writes section using:
+    |       - Real MCP data from all agents
+    |       - Agent expert analyses
+    |       - EMD template structure
+    |       - Conversation context
+    |
+    v
+_compile_report() — stitches 18 sections into final EMD-formatted document
+    |
+    v
+Downloadable Markdown Report
+```
+
+### MCP Tool Execution Flow (All Paths)
+
+```
+Agent._call_mcp_tools_parallel([(tool1, params), (tool2, params), ...])
+    |
+    v
+asyncio.gather() — parallel execution
+    |
+    v
+BaseAgent._call_mcp_tool(tool_name, params)
+    |
+    v
+MCPOrchestrator.route_tool_call(tool_name, params, context)
+    |--- L1 cache check (avoids duplicate calls)
+    |--- _select_optimal_mcp() — routes to server that has the tool
+    |        Uses _tool_to_servers index (built at construction)
+    |        Filters by health status, selects by performance score
+    |--- _call_mcp_tool() — executes via gateway or direct
+    |        |
+    |        v
+    |    Context Forge Gateway (if enabled)
+    |        |--- Rate limiting
+    |        |--- Compliance check
+    |        |--- Audit logging
+    |        v
+    |    MCPToolWrapper.call_tool(tool_name, params)
+    |        |
+    |        v
+    |    MCP Server (biomcp, pubchem, opentargets, etc.)
+    |
+    v
+(result, PerformanceFeedback) — recorded for adaptive routing
+```
+
+---
+
+## Specialized Agents and Their MCP Tools
+
+Each agent calls real MCP tools in parallel, then synthesizes the data with LLM:
+
+| Agent | MCP Servers | Tools | Domain |
+|-------|------------|-------|--------|
+| **ChemicalAgent** | PubChem, BioMCP | `search_compounds_by_name`, `drug_getter`, `openfda_label_searcher` | Compounds, molecular properties, drug safety |
+| **ClinicalAgent** | BioMCP | `trial_searcher`, `openfda_adverse_searcher`, `openfda_approval_searcher`, `openfda_label_searcher`, `nci_intervention_searcher`, `disease_getter` | Clinical trials, FDA data, regulatory |
+| **GeneAgent** | BioMCP, Open Targets, STRING-db | `gene_getter`, `search_opentargets`, `get_protein_interactions`, `nci_biomarker_searcher`, `variant_searcher` | Genes, variants, protein interactions, biomarkers |
+| **LiteratureAgent** | BioMCP, Literature, medRxiv, bioRxiv | `article_searcher`, `search_pubmed`, `search_medrxiv_preprints`, `search_biorxiv_preprints` | Publications, preprints, citations |
+| **DataAgent** | (LLM-only) | Statistical analysis prompts | Data analysis, statistics |
+| **ReportAgent** | All (via delegation) | Orchestrates all agents above | EMD-format report generation |
+
+### 3-Phase Agent Pattern
+
+Every specialized agent follows the same pattern:
+
+1. **Phase 1 — Gather**: Call MCP tools in parallel via `_call_mcp_tools_parallel()`
+2. **Phase 2 — Synthesize**: Feed real MCP data into LLM for expert analysis
+3. **Phase 3 — Fallback**: If orchestrator is None or all tools fail, produce LLM-only output
+
+---
+
+## Report Generation
+
+### EMD Biopharma R&D Format
+
+Reports follow the **EMD Biopharma R&D Competitive Intelligence** template (`docs/EMD_report_format.md`) with 18 sections:
+
+| Section | Title | Agents Used |
+|---------|-------|-------------|
+| 1 | Executive Summary & 6R Framework | Clinical, Gene |
+| 2 | Target & Biomarker Information | Gene, Chemical |
+| 3 | Molecular Pathways & Mechanism | Gene |
+| 4 | Tumor Microenvironment & Mutation Profile | Gene |
+| 5 | Biomarker Landscape | Gene, Clinical |
+| 6 | Target Prevalence | Gene |
+| 7 | Assay Landscape | Chemical |
+| 8 | Regulatory & Commercial Overview | Clinical |
+| **9** | **Competitive Landscape** | **Clinical, Chemical, Literature** |
+| 10 | Vendors & External Partners | Chemical |
+| 11 | Target Landscape & Development Trends | Clinical, Gene |
+| 12 | Target Characteristics (Molecular Data) | Gene |
+| 13 | Scientific Textual Insights | Literature |
+| 14 | Experimental Materials Availability | Chemical |
+| 15 | Key Opinion Leaders | Literature |
+| 16 | Patent Landscape | Chemical, Clinical |
+| **17** | **Risks, Gaps & Recommended Next Steps** | **Clinical, Gene, Literature** |
+| 18 | References & Appendices | Literature |
+
+### How Report Generation Works
+
+1. User discusses a drug/target in chat (e.g., "Tell me about Pembrolizumab")
+2. The Report Panel auto-detects the drug from conversation via `drug_extractor.py`
+3. User clicks **"Generate Report"**
+4. `ReportAgent` creates 5 specialized agent instances sharing the live `MCPOrchestrator`
+5. All 18 sections are dispatched **in parallel** via `asyncio.gather()`
+6. Each section dispatches to 1-3 agents (also in parallel)
+7. Each agent calls 3-6 MCP tools (also in parallel)
+8. Real MCP data + agent analyses are synthesized by LLM into EMD-formatted sections
+9. All sections are compiled into a downloadable Markdown report
+
+### ReportAgent is Self-Contained
+
+`ReportAgent` extends `BaseAgent` and can be exported to any application:
+
+```python
+from agents.report_agent import ReportAgent
+from agents.base_agent import AgentTask, AgentContext
+
+report_agent = ReportAgent(
+    mcp_orchestrator=your_orchestrator,  # MCPOrchestrator instance
+    config_data=your_config,             # LLM configuration
+)
+
+task = AgentTask(
+    task_id="report_001",
+    query="Generate CI report for Pembrolizumab",
+    task_type="report_generation",
+    parameters={
+        "drug_name": "Pembrolizumab",
+        "report_type": "competitive_intelligence",
+    },
+)
+
+context = AgentContext(
+    session_id="session_001",
+    user_id="analyst_001",
+    research_goal="Competitive intelligence on Pembrolizumab",
+)
+
+result = await report_agent.process(task, context)
+report_markdown = result.result_data["report"]
+```
+
+---
+
+## Context Forge Gateway (Governance)
+
+All MCP tool calls are mediated through the Context Forge Gateway:
+
+- **Rate Limiting**: Prevents API overload on MCP servers
+- **Compliance Checks**: Validates tool calls against policy rules
+- **Audit Logging**: Records every tool call with timestamps, parameters, results
+- **Health Monitoring**: Tracks MCP server availability and response times
+- **Performance Tracking**: Enables adaptive routing (MCPOrchestrator learns which servers are fastest)
+
+The gateway is initialized in `app.py` and attached to the `MCPOrchestrator`, which is stored in `st.session_state` and shared with all agents.
 
 ---
 
@@ -36,7 +237,7 @@ All agents and the orchestrator use **Claude Sonnet 4.5** (`claude-sonnet-4-5-20
 
 - **Python 3.10+**
 - **Node.js 18+** (for MCP servers)
-- **Anthropic API Key** with Claude Sonnet 4.5 access - get one at [console.anthropic.com](https://console.anthropic.com/)
+- **Anthropic API Key** with Claude Sonnet 4.5 access — get one at [console.anthropic.com](https://console.anthropic.com/)
 
 ---
 
@@ -69,47 +270,24 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-This installs:
-- `streamlit` - Web UI framework
-- `langchain`, `langchain-anthropic` - Agent framework + Claude integration
-- `anthropic` - Anthropic Python SDK
-- `langgraph` - Multi-agent orchestration
-- `mcp` - MCP server connections
-- `biomcp-python` - Biomedical research tools
-- And other utilities (see `requirements.txt` for full list)
-
 ### 4. Set Your Anthropic API Key
 
-You need a Claude API key from [console.anthropic.com](https://console.anthropic.com/).
-
-**Option A: Create a `.env` file (recommended)**
-
-Create a file named `.env` inside the `streamlit-app/` directory with this content:
+Create a `.env` file inside `streamlit-app/`:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
 ```
 
-**Option B: Set as environment variable**
-
-Windows (Command Prompt):
-```cmd
-set ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
-```
-
-Windows (PowerShell):
-```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-api03-YOUR-KEY-HERE"
-```
-
-macOS/Linux:
+Or set as environment variable:
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
+export ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE    # Linux/Mac
+set ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE       # Windows CMD
+$env:ANTHROPIC_API_KEY = "sk-ant-api03-YOUR-KEY-HERE"  # PowerShell
 ```
 
 ### 5. (Optional) Install MCP Servers
 
-The system works without MCP servers in **direct LLM mode** - Claude Sonnet 4.5 answers questions using its own knowledge. To enable MCP tool access for live data:
+The system works without MCP servers in **direct LLM mode**. To enable MCP tool access for live data:
 
 ```bash
 # From the repository root (one level up from streamlit-app)
@@ -118,13 +296,13 @@ cd ../servers/literature && npm install
 cd ../servers/data_analysis && npm install
 cd ../servers/web_knowledge && npm install
 
-# BioMCP (Python-based) - install in your venv
+# BioMCP (Python-based)
 pip install biomcp-python
 ```
 
 ### 6. Launch the Application
 
-**Windows (recommended):**
+**Windows:**
 ```cmd
 run.bat
 ```
@@ -134,95 +312,29 @@ run.bat
 streamlit run app.py
 ```
 
-The application opens automatically at **http://localhost:8501**.
+Opens at **http://localhost:8501**.
 
 ---
 
 ## Using the Application
 
-### Asking Questions
+### Chat (Left Panel)
 
-Type any pharmaceutical research question in the chat input. Examples:
+Type any pharmaceutical research question:
 
-**Chemistry:**
 - "What is the molecular formula of aspirin?"
-- "Explain the mechanism of action of ibuprofen"
-- "What are the ADMET properties of metformin?"
-
-**Clinical Trials:**
-- "What are the phases of clinical trials?"
 - "Find clinical trials for BRCA gene therapies"
+- "Analyze the competitive landscape for GLP-1 receptor agonists"
 
-**Genetics:**
-- "What is the role of p53 in cancer?"
-- "How does CRISPR gene editing work?"
-- "Explain the EGFR signaling pathway"
+The system calls relevant MCP tools and synthesizes results.
 
-**Multi-Agent Queries (triggers multiple agents):**
-- "Analyze the competitive landscape for GLP-1 receptor agonists including clinical trials and gene targets"
-- "Find research papers on CRISPR-Cas9 applications in oncology and related drug compounds"
+### Report Generation (Right Panel)
 
-### How Multi-Agent Orchestration Works
-
-1. The orchestrator analyzes your query and extracts keywords
-2. It scores each agent's relevance (Chemical, Clinical, Literature, Gene, Data)
-3. Selects the best agents (1-3 depending on complexity)
-4. Runs agents in parallel or sequentially as needed
-5. Claude Sonnet 4.5 synthesizes all agent results into one comprehensive response
-
-Click **"View Agent Reasoning Process"** in any response to see the step-by-step tool usage.
-
----
-
-## Generating a Full Test Report
-
-### Option 1: Run the System Test
-
-This validates all components end-to-end:
-
-```bash
-cd streamlit-app
-python test_system.py
-```
-
-The test covers:
-- Claude Sonnet 4.5 connectivity
-- All 5 specialized agents
-- LangGraph orchestrator workflow
-- Multi-agent synthesis
-- Report generation
-
-A markdown report is saved to `streamlit-app/` with timestamped filename.
-
-### Option 2: Programmatic Report
-
-```python
-import asyncio
-from agents.orchestrator_agent import OrchestratorAgent
-
-async def generate_report():
-    orchestrator = OrchestratorAgent(
-        mcp_orchestrator=None,
-        governance_gateway=None
-    )
-
-    result = await orchestrator.process_query(
-        query="Analyze aspirin: molecular properties, clinical trials, and gene targets",
-        session_id="test-session",
-        user_id="test-user"
-    )
-
-    print(result["final_answer"])
-
-asyncio.run(generate_report())
-```
-
-### Option 3: From the Streamlit UI
-
-1. Open `http://localhost:8501`
-2. Enter a complex research query
-3. The orchestrator assigns multiple agents and synthesizes results
-4. Copy the synthesized response as your report
+1. Chat about a drug or target (e.g., "Tell me about revuforj")
+2. The Report Panel auto-detects the subject
+3. Select report type (Competitive Intelligence)
+4. Click **"Generate Report"**
+5. Download the EMD-formatted Markdown report
 
 ---
 
@@ -230,117 +342,99 @@ asyncio.run(generate_report())
 
 ```
 streamlit-app/
-├── app.py                          # Main Streamlit entry point
-├── agent.py                        # Simple MCP agent with tool calling
-├── config.py                       # Configuration (Claude model, MCP servers, features)
-├── mcp_tools.py                    # MCP server connection and tool wrapper
+├── app.py                          # Streamlit entry point + MCPOrchestrator init
+├── agent.py                        # MCPAgent (LangChain chat tool-calling)
+├── config.py                       # Model, MCP server, feature flag config
+├── config_manager.py               # Multi-profile configuration manager
+├── mcp_tools.py                    # MCP server connections + MCPToolWrapper
 ├── run.bat                         # Windows startup script
 ├── requirements.txt                # Python dependencies
-├── .env                            # API key (create this - not in git)
+├── .env                            # API keys (create this - not in git)
 │
-├── agents/                         # Specialized agent implementations
-│   ├── base_agent.py               # Abstract base class
-│   ├── chemical_agent.py           # Chemistry & drug compounds
-│   ├── clinical_agent.py           # Clinical trials & regulatory
-│   ├── gene_agent.py               # Genetics & molecular biology
-│   ├── literature_agent.py         # Scientific literature
-│   ├── data_agent.py               # Data analysis & statistics
-│   └── orchestrator_agent.py       # LangGraph multi-agent orchestrator
+├── agents/                         # Specialized agents (3-phase MCP pattern)
+│   ├── base_agent.py               # Abstract base + MCP helper methods
+│   ├── chemical_agent.py           # PubChem, BioMCP tools
+│   ├── clinical_agent.py           # BioMCP clinical/regulatory tools
+│   ├── gene_agent.py               # BioMCP, Open Targets, STRING-db tools
+│   ├── literature_agent.py         # BioMCP, Literature, medRxiv, bioRxiv tools
+│   ├── data_agent.py               # Statistical analysis (LLM-only)
+│   ├── report_agent.py             # Multi-agent report orchestrator (18 sections)
+│   └── orchestrator_agent.py       # LangGraph multi-agent orchestrator (chat)
 │
-├── orchestration/                  # Dual orchestration system
-│   ├── agent_orchestrator.py       # Top-layer: agent routing & task decomposition
-│   ├── mcp_orchestrator.py         # Bottom-layer: MCP server routing
+├── orchestration/                  # MCP routing and orchestration
+│   ├── mcp_orchestrator.py         # Tool-to-server routing, caching, performance
+│   ├── agent_orchestrator.py       # Agent routing & task decomposition
 │   ├── performance_kb.py           # Bidirectional learning knowledge base
 │   ├── session_manager.py          # Research session memory
 │   └── tool_composer.py            # Dynamic tool composition
 │
-├── reporting/                      # Report generation
-│   ├── report_generator.py         # Markdown/PDF report engine
-│   └── exporters/                  # Format exporters
+├── ui/                             # UI components
+│   └── report_panel.py             # Report generation panel (right column)
+│
+├── reporting/                      # Report utilities
+│   ├── drug_extractor.py           # Drug/target detection from conversation
+│   └── chat_report_generator.py    # Legacy single-prompt generator (fallback)
+│
+├── governance/                     # Context Forge Gateway
+│   └── gateway.py                  # Rate limiting, compliance, audit, health
 │
 ├── utils/                          # Utilities
-│   └── llm_factory.py              # Centralized Claude LLM factory
+│   ├── llm_factory.py              # Centralized LLM factory (multi-provider)
+│   └── tavily_tool.py              # Tavily web search integration
 │
-├── governance/                     # Governance & compliance layer
+├── models/                         # Data models (performance, sessions)
 ├── context/                        # Persistence layer (SQLite, ChromaDB)
-├── models/                         # Data models
+├── docs/                           # Documentation
+│   └── EMD_report_format.md        # 18-section EMD report template
 └── data/                           # Runtime data storage
 ```
 
 ---
 
-## Configuration Reference
+## MCP Servers Reference
 
-All LLM settings are in `config.py`:
+| Server | Tools | Purpose |
+|--------|-------|---------|
+| `biomcp` | `article_searcher`, `trial_searcher`, `gene_getter`, `drug_getter`, `variant_searcher`, `disease_getter`, `openfda_*`, `nci_*` | Core biomedical data (22 tools) |
+| `pubchem` | `search_compounds_by_name`, `get_compound_properties` | Chemical compound data |
+| `literature` | `search_pubmed`, `get_pubmed_abstract`, `search_by_doi` | PubMed literature |
+| `opentargets` | `search_opentargets`, `get_target_associations`, `get_disease_associations` | Target-disease associations |
+| `stringdb` | `get_protein_interactions`, `get_interaction_partners` | Protein interaction networks |
+| `medrxiv` | `search_medrxiv_preprints`, `get_medrxiv_paper`, `get_recent_medrxiv` | Medical preprints |
+| `biorxiv` | `search_biorxiv_preprints`, `get_biorxiv_paper`, `get_recent_biorxiv` | Biology preprints |
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| `CLAUDE_MODEL` | `claude-sonnet-4-5-20250514` | Claude Sonnet 4.5 |
-| `CLAUDE_TEMPERATURE` | `0.7` | Response creativity (0-1) |
-| `CLAUDE_MAX_TOKENS` | `8192` | Max output tokens per response |
-| `LLM_PROVIDER` | `anthropic` | LLM provider |
+---
 
-### MCP Servers (configured in `config.py`)
+## Configuration Profiles
 
-| Server | Purpose | Agent(s) |
-|--------|---------|----------|
-| `pubchem` | Chemical compound data | ChemicalAgent |
-| `biomcp` | PubMed, clinical trials, variants, genes | All agents |
-| `literature` | PubMed articles and citations | LiteratureAgent |
-| `data_analysis` | Statistics and molecular descriptors | DataAgent |
-| `web_knowledge` | Wikipedia, clinical trials, gene/drug info | All agents |
+The system supports multiple LLM configurations via `config_manager.py`:
 
-### Feature Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `use_specialized_agents` | `True` | Enable 5 specialized agents |
-| `use_langgraph_orchestrator` | `True` | Enable LangGraph orchestration |
-| `enable_reporting` | `True` | Enable report generation |
-| `use_persistent_context` | `False` | SQLite/ChromaDB persistence |
-| `use_governance_gateway` | `False` | Compliance gateway |
+| Profile | Provider | Model | Use Case |
+|---------|----------|-------|----------|
+| **Standard** | Anthropic | Claude Sonnet 4.5 | Open-source development |
+| **Merck Enterprise** | Azure OpenAI / AWS Bedrock | GPT-4o / Claude 3.5 | Enterprise deployment |
+| **Ollama** | Local | qwen3:235b-thinking | Offline/local development |
 
 ---
 
 ## Troubleshooting
 
 ### "ANTHROPIC_API_KEY not set"
-
-- Verify `.env` file exists in the `streamlit-app/` directory (not the repo root)
-- Verify the key starts with `sk-ant-`
-- Try setting directly: `set ANTHROPIC_API_KEY=sk-ant-...` (Windows) or `export ANTHROPIC_API_KEY=sk-ant-...` (Linux/Mac)
-- Restart Streamlit after changing the key
+- Verify `.env` file exists in `streamlit-app/` (not repo root)
+- Key should start with `sk-ant-`
+- Restart Streamlit after changing
 
 ### "MCP servers not available"
-
-This is normal if MCP servers aren't installed. The system gracefully falls back to direct Claude LLM mode. To install, see Step 5 above.
-
-### Import Errors
-
-- Make sure your virtual environment is activated (`venv\Scripts\activate` on Windows)
-- Run `pip install -r requirements.txt` again
-- Check Python version: `python --version` (needs 3.10+)
-
-### "Streamlit not found"
-
-```bash
-pip install streamlit
-# Or use:
-python -m streamlit run app.py
-```
+Normal if MCP servers aren't installed. Falls back to direct LLM mode.
 
 ### Rate Limiting
-
-Claude Sonnet 4.5 has API rate limits. If you get rate limit errors:
-- Wait a moment and retry
-- Reduce query complexity
-- Check your Anthropic usage tier at [console.anthropic.com](https://console.anthropic.com/)
+Claude Sonnet 4.5 has API rate limits. Wait and retry, or check your tier at [console.anthropic.com](https://console.anthropic.com/).
 
 ---
 
 ## License
 
-BU Senior Design project - EMD Serono team.
+BU Senior Design project — EMD Serono team.
 
 ## Resources
 

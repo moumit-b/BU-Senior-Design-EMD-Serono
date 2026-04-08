@@ -133,6 +133,30 @@ class MCPToolWrapper:
             error_detail = f"{type(e).__name__}: {str(e)}\nTraceback:\n{traceback.format_exc()}"
             return f"Error calling tool {tool_name}: {error_detail}"
 
+    async def call_tool_safe(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """
+        Call a tool, handling cross-event-loop scenarios.
+
+        When the caller is running on a different event loop than the one
+        this wrapper's MCP session was created on, we schedule the call
+        on the correct loop using run_coroutine_threadsafe + wrap_future.
+        """
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if self._loop and current_loop is not self._loop:
+            # Cross-loop: schedule on the wrapper's loop
+            future = asyncio.run_coroutine_threadsafe(
+                self.call_tool(tool_name, arguments),
+                self._loop,
+            )
+            # wrap_future makes it awaitable on the current loop without blocking
+            return await asyncio.wrap_future(future)
+        else:
+            return await self.call_tool(tool_name, arguments)
+
     def get_langchain_tools(self) -> List[Tool]:
         """
         Convert MCP tools to LangChain tools.
