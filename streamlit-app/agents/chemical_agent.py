@@ -103,8 +103,7 @@ Query: {task.query}
 Provide a detailed, scientifically accurate response covering molecular properties,
 bioactivity, safety data, and clinical relevance."""
 
-            response = self.llm.invoke(prompt)
-            answer = response.content if hasattr(response, "content") else str(response)
+            answer = await self._invoke_llm(prompt)
 
             result.result_data = {
                 "answer": answer,

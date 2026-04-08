@@ -107,8 +107,7 @@ Query: {task.query}
 Provide a detailed, evidence-based response covering clinical trial data,
 regulatory context, and safety considerations."""
 
-            response = self.llm.invoke(prompt)
-            answer = response.content if hasattr(response, "content") else str(response)
+            answer = await self._invoke_llm(prompt)
 
             result.result_data = {
                 "answer": answer,

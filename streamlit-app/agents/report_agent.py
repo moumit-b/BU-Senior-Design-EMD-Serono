@@ -31,6 +31,12 @@ from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 
 logger = logging.getLogger(__name__)
 
+
+def _log(msg: str):
+    """Print + log for terminal visibility during report generation."""
+    print(f"[ReportAgent] {msg}")
+    logger.info(msg)
+
 # ---------------------------------------------------------------------------
 # EMD format template (loaded once, cached at module level)
 # ---------------------------------------------------------------------------
@@ -245,6 +251,12 @@ CI_CORE_SECTIONS = [
 # Sections that get thorough treatment (detailed tables, exhaustive analysis)
 _DETAILED_SECTION_IDS = {"1", "2", "8", "9", "11", "17"}
 
+# Max concurrent sections to prevent flooding MCP servers
+_MAX_CONCURRENT_SECTIONS = 3
+
+# Max concurrent MCP tool calls across all agents
+_MCP_SEMAPHORE: Optional[asyncio.Semaphore] = None
+
 
 # ---------------------------------------------------------------------------
 # ReportAgent
@@ -305,11 +317,7 @@ class ReportAgent(BaseAgent):
             "literature": LiteratureAgent(self.mcp_orchestrator, self.llm),
             "data": DataAgent(self.mcp_orchestrator, self.llm),
         }
-        logger.info(
-            "ReportAgent created %d specialized agents (mcp_orchestrator=%s)",
-            len(agents),
-            "active" if self.mcp_orchestrator else "None",
-        )
+        _log(f"Created {len(agents)} specialized agents (mcp_orchestrator={'active' if self.mcp_orchestrator else 'None'})")
         return agents
 
     # ---- BaseAgent abstract method implementations ----
@@ -372,7 +380,7 @@ class ReportAgent(BaseAgent):
             result.tools_used = tools_used or ["llm_analysis"]
 
         except Exception as e:
-            logger.exception("ReportAgent.process failed")
+            _log(f"PROCESS FAILED: {e}")
             result.success = False
             result.error_message = f"ReportAgent error: {str(e)}"
 
@@ -397,27 +405,46 @@ class ReportAgent(BaseAgent):
         all_mcps: List[str] = []
         all_tools: List[str] = []
 
-        # Create section coroutines — all 18 sections run in parallel
-        section_tasks = []
-        for section in CI_CORE_SECTIONS:
-            coro = self._research_section_with_agents(
-                drug_name=drug_name,
-                section=section,
-                conversation_context=conversation_context,
-                agent_context=agent_context,
-                detailed=section["id"] in _DETAILED_SECTION_IDS,
-            )
-            section_tasks.append((section["id"], coro))
+        _log(f"Starting CI report for '{drug_name}' — {len(CI_CORE_SECTIONS)} sections")
 
-        # Run all sections in parallel
-        coros = [coro for _, coro in section_tasks]
-        results = await asyncio.gather(*coros, return_exceptions=True)
+        # Initialize a global semaphore to limit concurrent MCP calls
+        global _MCP_SEMAPHORE
+        _MCP_SEMAPHORE = asyncio.Semaphore(4)  # max 4 concurrent MCP calls
+
+        # Process sections in batches to avoid flooding MCP servers
+        section_results_map: Dict[str, Any] = {}
+        batch_size = _MAX_CONCURRENT_SECTIONS
+
+        for batch_start in range(0, len(CI_CORE_SECTIONS), batch_size):
+            batch = CI_CORE_SECTIONS[batch_start:batch_start + batch_size]
+            batch_ids = [s["id"] for s in batch]
+            _log(f"Processing batch: sections {batch_ids}")
+
+            coros = []
+            for section in batch:
+                coro = self._research_section_with_agents(
+                    drug_name=drug_name,
+                    section=section,
+                    conversation_context=conversation_context,
+                    agent_context=agent_context,
+                    detailed=section["id"] in _DETAILED_SECTION_IDS,
+                )
+                coros.append((section["id"], coro))
+
+            batch_coros = [coro for _, coro in coros]
+            results = await asyncio.gather(*batch_coros, return_exceptions=True)
+
+            for i, (section_id, _) in enumerate(coros):
+                section_results_map[section_id] = results[i]
+
+            _log(f"Batch {batch_ids} completed")
+
+        _log(f"All {len(CI_CORE_SECTIONS)} sections completed")
 
         section_results: Dict[str, str] = {}
-        for i, (section_id, _) in enumerate(section_tasks):
-            res = results[i]
+        for section_id, res in section_results_map.items():
             if isinstance(res, Exception):
-                logger.error("Section %s failed: %s", section_id, res)
+                _log(f"Section {section_id} FAILED: {res}")
                 title = next(
                     (s["title"] for s in CI_CORE_SECTIONS if s["id"] == section_id),
                     "Unknown",
@@ -456,6 +483,8 @@ class ReportAgent(BaseAgent):
         agent_names = section.get("agents", [])
         research_prompt = section["research_prompt"].format(drug_name=drug_name)
 
+        _log(f"Section {section_id} ({section_title}): dispatching to agents {agent_names}")
+
         # Phase 1: Gather data from specialized agents in parallel
         agent_data = await self._gather_agent_data(
             drug_name=drug_name,
@@ -468,6 +497,8 @@ class ReportAgent(BaseAgent):
         section_mcps: List[str] = []
         section_tools: List[str] = []
         mcp_data_blocks: Dict[str, Any] = {}
+
+        _log(f"Section {section_id}: agent data gathered, synthesizing...")
 
         for agent_name, agent_result in agent_data.items():
             if agent_result and agent_result.success:
@@ -483,7 +514,7 @@ class ReportAgent(BaseAgent):
                     mcp_data_blocks[agent_name] = rd["mcp_data"]
 
         # Phase 2: Synthesize with LLM using agent data + EMD template
-        section_md = self._synthesize_section(
+        section_md = await self._synthesize_section(
             drug_name=drug_name,
             section_id=section_id,
             section_title=section_title,
@@ -524,7 +555,7 @@ class ReportAgent(BaseAgent):
                 result = await agent.process(task, agent_context)
                 return name, result
             except Exception as e:
-                logger.warning("Agent %s failed during report gathering: %s", name, e)
+                _log(f"Agent {name} failed during report gathering: {e}")
                 return name, None
 
         # Run all agents in parallel
@@ -533,14 +564,14 @@ class ReportAgent(BaseAgent):
 
         for item in gathered:
             if isinstance(item, Exception):
-                logger.warning("Agent gather exception: %s", item)
+                _log(f"Agent gather exception: {item}")
             else:
                 name, result = item
                 results[name] = result
 
         return results
 
-    def _synthesize_section(
+    async def _synthesize_section(
         self,
         drug_name: str,
         section_id: str,
@@ -628,10 +659,11 @@ class ReportAgent(BaseAgent):
 Write this section now:"""
 
         try:
-            response = self.llm.invoke(prompt)
-            content = response.content if hasattr(response, "content") else str(response)
+            content = await self._invoke_llm(prompt)
+            _log(f"Section {section_id} synthesized ({len(content)} chars)")
             return content.strip()
         except Exception as e:
+            _log(f"Section {section_id} LLM synthesis failed: {e}")
             return (
                 f"## {section_id}. {section_title}\n\n"
                 f"*Section generation failed: {e}*"
