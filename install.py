@@ -18,6 +18,12 @@ import os
 import sys
 import subprocess
 import shutil
+
+# Force UTF-8 output on Windows (cp1252 can't print ✓ ✗ ⚠ etc.)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
@@ -62,7 +68,8 @@ def run(cmd, cwd=None, env=None):
     """Run a command, return (returncode, stdout+stderr)."""
     result = subprocess.run(
         cmd, cwd=cwd, env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        shell=(os.name == "nt"),  # Windows needs shell=True for .cmd files (npm, node)
     )
     return result.returncode, result.stdout
 
@@ -129,8 +136,8 @@ def setup_venv():
             sys.exit(1)
         ok("venv created")
 
-    # Upgrade pip inside venv
-    rc, out = run([str(venv_pip()), "install", "--quiet", "--upgrade", "pip"])
+    # Upgrade pip inside venv — use 'python -m pip' to avoid Windows file-lock issues
+    rc, out = run([str(venv_python()), "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
     if rc == 0:
         ok("pip upgraded")
     else:
@@ -216,7 +223,7 @@ def setup_env():
     if ENV_FILE.exists():
         ok(f".env already exists at {ENV_FILE}")
     else:
-        ENV_FILE.write_text(ENV_TEMPLATE)
+        ENV_FILE.write_text(ENV_TEMPLATE, encoding="utf-8")
         ok(f".env created at {ENV_FILE}")
 
     # Also write .env.example (safe to commit)
@@ -227,7 +234,7 @@ def setup_env():
         "NCI_API_KEY=\n",
         "NCI_API_KEY=your_nci_key_here\n"
     )
-    ENV_EXAMPLE.write_text(example_text)
+    ENV_EXAMPLE.write_text(example_text, encoding="utf-8")
     ok(f".env.example written at {ENV_EXAMPLE}")
 
 # ── Final summary ──────────────────────────────────────────────────────────────
