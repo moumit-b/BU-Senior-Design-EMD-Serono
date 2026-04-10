@@ -7,10 +7,8 @@ Complete guide to running the Pharmaceutical Research Intelligence System from s
 ## What You Need
 
 - **Python 3.10+** installed
-- **Node.js 18+** installed (only if you want MCP server tools)
-- **An Anthropic API key** with Claude Sonnet 4.5 access
-
-Get your API key at: https://console.anthropic.com/
+- **Node.js 18+** installed (required for MCP server tools)
+- **An Anthropic API key** with Claude Sonnet access — get one at https://console.anthropic.com/
 
 ---
 
@@ -23,125 +21,101 @@ cd BU-Senior-Design-EMD-Serono
 
 ---
 
-## Step 2: Set Up the Python Environment
+## Step 2: Run the Installer
+
+From the repo root, run:
 
 ```bash
-cd streamlit-app
-python -m venv venv
+python install.py
 ```
+
+This single command handles everything:
+- Creates a Python virtual environment (`streamlit-app/venv`)
+- Installs all Python dependencies
+- Runs `npm install` in all 9 Node.js MCP server directories
+- Scaffolds a `streamlit-app/.env` file with documented slots for all required keys
+
+> **Note:** `requirements.txt` is pip-only and cannot install Node.js dependencies.
+> Always use `install.py` on a new machine — not `pip install -r requirements.txt` alone.
+
+---
+
+## Step 3: Fill In Your API Keys
+
+Open `streamlit-app/.env` (created by the installer) and fill in:
+
+```
+# Required — LLM provider
+ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
+
+# Required for NCI clinical trials tools (nci_intervention_searcher, nci_biomarker_searcher)
+# Free key at: https://clinicaltrialsapi.cancer.gov/
+NCI_API_KEY=your_nci_key_here
+
+# Required on corporate/Windows networks with SSL interception (e.g. Merck)
+# BIOMCP_DISABLE_SSL=true
+```
+
+Optional keys (enable additional features):
+```
+# Tavily web search in the chat agent — free tier at https://tavily.com
+# TAVILY_API_KEY=your_tavily_key_here
+```
+
+---
+
+## Step 4: Launch the Application
 
 Activate the virtual environment:
 
 **Windows (Command Prompt):**
 ```cmd
+cd streamlit-app
 venv\Scripts\activate
 ```
 
 **Windows (PowerShell):**
 ```powershell
+cd streamlit-app
 venv\Scripts\Activate.ps1
 ```
 
 **macOS / Linux:**
 ```bash
+cd streamlit-app
 source venv/bin/activate
 ```
 
-You should see `(venv)` at the start of your terminal prompt.
+Then start the app:
 
----
-
-## Step 3: Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-This installs LangChain, Anthropic SDK, Streamlit, LangGraph, and all other dependencies.
-
----
-
-## Step 4: Add Your Anthropic API Key
-
-Create a file called `.env` inside the `streamlit-app/` folder:
-
-**Windows (Command Prompt):**
-```cmd
-echo ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE > .env
-```
-
-**macOS / Linux:**
-```bash
-echo "ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE" > .env
-```
-
-**Or manually:** create a file named `.env` in `streamlit-app/` with this single line:
-
-```
-ANTHROPIC_API_KEY=sk-ant-api03-YOUR-KEY-HERE
-```
-
-Replace `sk-ant-api03-YOUR-KEY-HERE` with your actual key from https://console.anthropic.com/.
-
----
-
-## Step 5: Launch the Application
-
-**Windows:**
-```cmd
-run.bat
-```
-
-**Any platform:**
 ```bash
 streamlit run app.py
 ```
 
-The app will open automatically in your browser at **http://localhost:8501**.
-
-You should see:
-- Sidebar showing **LLM Ready: claude-sonnet-4-5-20250514**
-- A chat input at the bottom of the page
+The app opens automatically at **http://localhost:8501**. You should see the sidebar showing **LLM Ready** and **MCPOrchestrator: active** in the Dev Log after the first query.
 
 ---
 
-## Step 6: Run a Query
+## Step 5: Run a Query
 
-Type a question into the chat input. Try one of these:
+Type a question into the chat input. Try:
 
 - `What is the molecular formula of aspirin?`
 - `Explain the mechanism of action of ibuprofen`
 - `What are the phases of clinical trials?`
-- `How does CRISPR gene editing work?`
 
-The system will route your query through the appropriate specialized agents (Chemical, Clinical, Literature, Gene, Data) and return a synthesized answer powered by Claude Sonnet 4.5.
+The system routes your query through specialized agents (Chemical, Clinical, Literature, Gene, Data) and returns a synthesized answer.
 
 ---
 
-## Step 7: Generate a Competitive Intelligence Report
+## Step 6: Generate a Competitive Intelligence Report
 
-Enter a complex, multi-domain query that triggers multiple agents. For example:
+Use the **Report Panel** (right side of the app) to generate full 18-section EMD-format Competitive Intelligence reports. Enter a drug name, click Generate, and the system will:
 
-```
-Analyze the competitive landscape for GLP-1 receptor agonists in diabetes treatment,
-including clinical trial status, gene targets, molecular properties, and recent publications.
-```
-
-Or:
-
-```
-Generate a competitive intelligence report on PCSK9 inhibitors: compare molecular
-properties, review clinical trials for evolocumab and alirocumab, analyze the PCSK9
-gene target, and summarize key research publications.
-```
-
-The orchestrator will:
-1. Analyze the query and extract keywords
-2. Assign multiple agents (e.g., Chemical + Clinical + Gene + Literature)
-3. Each agent generates a specialized analysis using Claude Sonnet 4.5
-4. Claude synthesizes all agent results into a comprehensive report
-
-The final response in the chat is your competitive intelligence report. You can copy it directly from the UI.
+1. Dispatch specialized agents in parallel batches across 18 sections
+2. Each agent queries real MCP data sources (PubChem, BioMCP, OpenFDA, ClinicalTrials.gov, medRxiv, etc.)
+3. Synthesize findings into a structured markdown report
+4. Offer a one-click markdown download
 
 ---
 
@@ -150,21 +124,40 @@ The final response in the chat is your competitive intelligence report. You can 
 | Problem | Solution |
 |---------|----------|
 | `ANTHROPIC_API_KEY not set` | Check that `.env` exists in `streamlit-app/` and the key starts with `sk-ant-` |
-| `ModuleNotFoundError` | Make sure venv is activated and run `pip install -r requirements.txt` |
+| `ModuleNotFoundError` | Make sure venv is activated; re-run `python install.py` |
 | `streamlit: command not found` | Run `python -m streamlit run app.py` instead |
-| `MCP servers not available` | Normal - the system works without MCP servers using direct Claude LLM mode |
+| MCP server `Connection closed` at startup | Run `python install.py` — `npm install` likely missing for that server |
+| `nci_* tools fail` | Add `NCI_API_KEY` to `.env` (free at clinicaltrialsapi.cancer.gov) |
+| SSL certificate errors in biomcp | Add `BIOMCP_DISABLE_SSL=true` to `.env` (common on Merck/corporate networks) |
+| WeasyPrint PDF export fails | Install system GTK3 libraries (see `requirements.txt` for platform-specific instructions) |
 | Rate limit errors | Wait a moment and retry, or check your Anthropic usage tier |
+
+---
+
+## MCP Servers
+
+The system connects to 9 MCP servers at startup. All are free and require no API keys except where noted:
+
+| Server | Data Source | Requires |
+|--------|-------------|----------|
+| pubchem | PubChem (NIH) — compound structures, properties | Nothing |
+| biomcp | PubMed, ClinicalTrials.gov, OpenFDA, genes, variants | `NCI_API_KEY` for nci_* tools |
+| literature | PubMed articles and abstracts | Nothing |
+| data_analysis | Local statistics and molecular descriptors | Nothing |
+| web_knowledge | Wikipedia, DrugBank, clinical trials, gene info | Nothing |
+| medrxiv | medRxiv preprints | Nothing |
+| biorxiv | bioRxiv preprints | Nothing |
+| opentargets | Open Targets — target identification and drug associations | Nothing |
+| stringdb | STRING-db — protein-protein interaction networks | Nothing |
 
 ---
 
 ## Architecture
 
-All five specialized agents and the LangGraph orchestrator use **Claude Sonnet 4.5** (`claude-sonnet-4-5-20250514`):
-
-| Agent | Domain | Example Queries |
-|-------|--------|-----------------|
-| ChemicalAgent | Compounds, structures, ADMET | "molecular weight of caffeine" |
-| ClinicalAgent | Trials, FDA, adverse events | "phase 3 trials for pembrolizumab" |
-| LiteratureAgent | PubMed, citations, research | "recent papers on CAR-T therapy" |
-| GeneAgent | Genes, variants, pathways | "BRCA1 mutations and cancer risk" |
-| DataAgent | Statistics, analysis, trends | "compare efficacy data across studies" |
+| Agent | Domain | MCP Sources |
+|-------|--------|-------------|
+| ChemicalAgent | Compounds, structures, ADMET | pubchem, biomcp |
+| ClinicalAgent | Trials, FDA approvals, adverse events | biomcp |
+| LiteratureAgent | PubMed, preprints, citations | literature, medrxiv |
+| GeneAgent | Genes, targets, pathways | biomcp |
+| DataAgent | Statistics, analysis | data_analysis |
