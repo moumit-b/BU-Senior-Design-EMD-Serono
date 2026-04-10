@@ -153,6 +153,11 @@ class ContextForgeGateway:
                 return response
 
             # 3. Check service health
+            # Refresh the heartbeat before the health check so the heartbeat
+            # timeout doesn't create a chicken-and-egg: servers need calls to
+            # stay healthy, but unhealthy servers would be rejected here.
+            if server in self._mcp_wrappers:
+                self.service_registry.update_heartbeat(server)
             if not self.service_registry.is_healthy(server):
                 response.error = f"Service '{server}' is unavailable or unhealthy"
                 self.stats["failed_calls"] += 1
@@ -174,6 +179,22 @@ class ContextForgeGateway:
 
             # 5. Execute tool call via the real MCP wrapper
             result = await self._execute_tool_call(server, tool, parameters)
+
+            # Detect failure conditions — call_tool() returns error strings
+            # instead of raising, and _execute_tool_call() returns stub dicts
+            # when no wrapper is registered.
+            is_stub = isinstance(result, dict) and result.get("status") == "stub"
+            is_error_str = isinstance(result, str) and (
+                result.startswith("Error ") or result.startswith("Error:")
+            )
+            if is_stub or is_error_str:
+                response.success = False
+                response.result = result
+                response.error = (
+                    result if is_error_str else result.get("data", "Stub response — no live MCP connection")
+                )
+                self.stats["failed_calls"] += 1
+                return response
 
             response.success = True
             response.result = result

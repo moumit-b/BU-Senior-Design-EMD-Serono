@@ -59,13 +59,14 @@ class ClinicalAgent(BaseAgent):
             }
 
             # Phase 1: Gather real data in parallel
+            # Removed nci_intervention_searcher (requires NCI_API_KEY env var).
+            # Fixed disease_getter param: biomcp requires disease_id_or_name, not disease.
             parallel_calls = [
                 ("trial_searcher", {"interventions": drug_name}),
                 ("openfda_adverse_searcher", {"drug": drug_name}),
                 ("openfda_approval_searcher", {"drug": drug_name}),
                 ("openfda_label_searcher", {"drug": drug_name}),
-                ("nci_intervention_searcher", {"query": drug_name}),
-                ("disease_getter", {"disease": task.parameters.get("indication", drug_name)}),
+                ("disease_getter", {"disease_id_or_name": task.parameters.get("indication", drug_name)}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 

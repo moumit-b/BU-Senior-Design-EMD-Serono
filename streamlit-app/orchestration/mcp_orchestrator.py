@@ -24,6 +24,18 @@ from models.performance import PerformanceFeedback
 from utils.cache import MultiLevelCache
 
 
+def _is_error_result(result: Any) -> bool:
+    """Detect error strings returned by MCPToolWrapper.call_tool().
+
+    call_tool() catches all exceptions and returns strings like
+    "Error calling tool foo: ..." or "Error: MCP session not initialized".
+    These must not be treated as successful data.
+    """
+    if isinstance(result, str):
+        return result.startswith("Error ") or result.startswith("Error:")
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Internal performance tracker (lightweight, matches orchestrator's usage)
 # ---------------------------------------------------------------------------
@@ -70,6 +82,7 @@ class MCPOrchestrator:
         # Health monitoring
         self.health_status: Dict[str, bool] = {name: True for name in mcp_wrappers.keys()}
         self.circuit_breaker: Dict[str, int] = {name: 0 for name in mcp_wrappers.keys()}
+        self._circuit_tripped_at: Dict[str, Optional[float]] = {name: None for name in mcp_wrappers.keys()}
 
         # Initialize performance tracking for each MCP
         for mcp_name in mcp_wrappers.keys():
@@ -151,7 +164,7 @@ class MCPOrchestrator:
         try:
             result = await self._call_mcp_tool(mcp_name, tool_name, params, context)
             latency_ms = (time.time() - start_time) * 1000
-            success = result is not None
+            success = result is not None and not _is_error_result(result)
 
             # Record performance
             self._record_performance(mcp_name, query_type, latency_ms, success, keywords)
@@ -192,7 +205,16 @@ class MCPOrchestrator:
         """
         # Only consider servers that actually expose this tool AND are healthy
         candidate_servers = self._tool_to_servers.get(tool_name, [])
-        candidate_mcps = [s for s in candidate_servers if self.health_status.get(s, False)]
+        candidate_mcps = []
+        for s in candidate_servers:
+            if self.health_status.get(s, False):
+                candidate_mcps.append(s)
+            else:
+                # Auto-reset circuit breaker after 120s cooldown
+                tripped_at = self._circuit_tripped_at.get(s)
+                if tripped_at is not None and time.time() - tripped_at > 120:
+                    self.reset_circuit_breaker(s)
+                    candidate_mcps.append(s)
 
         if not candidate_mcps:
             return None
@@ -298,8 +320,9 @@ class MCPOrchestrator:
         else:
             perf.failure_count += 1
             self.circuit_breaker[mcp_name] = self.circuit_breaker.get(mcp_name, 0) + 1
-            if self.circuit_breaker[mcp_name] > 5:
+            if self.circuit_breaker[mcp_name] > 20:
                 self.health_status[mcp_name] = False
+                self._circuit_tripped_at[mcp_name] = time.time()
 
         # Update running average latency
         perf.avg_latency_ms = (

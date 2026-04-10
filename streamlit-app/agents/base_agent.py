@@ -236,6 +236,7 @@ class BaseAgent(ABC):
             (result_data, success) — result_data is None on failure.
         """
         if self.mcp_orchestrator is None:
+            print(f"[{self.agent_name}] MCP SKIP {tool_name}: no orchestrator")
             return None, False
 
         # Import semaphore from report_agent if available (limits concurrency)
@@ -260,10 +261,16 @@ class BaseAgent(ABC):
                     )
 
             result, feedback = await asyncio.wait_for(_do_call(), timeout=timeout)
+            if feedback.success:
+                print(f"[{self.agent_name}] MCP OK {tool_name} ({feedback.latency_ms:.0f}ms)")
+            else:
+                print(f"[{self.agent_name}] MCP FAIL {tool_name}: {feedback.recommendation}")
             return result, feedback.success
         except asyncio.TimeoutError:
+            print(f"[{self.agent_name}] MCP TIMEOUT {tool_name} (>{timeout}s)")
             return None, False
-        except Exception:
+        except Exception as e:
+            print(f"[{self.agent_name}] MCP ERROR {tool_name}: {type(e).__name__}: {e}")
             return None, False
 
     async def _call_mcp_tools_parallel(

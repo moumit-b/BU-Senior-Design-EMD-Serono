@@ -62,22 +62,22 @@ class GeneAgent(BaseAgent):
             }
 
             # Phase 1: Gather real data in parallel
+            # Note: gene_getter expects gene_id_or_symbol (e.g. "BRCA1"), not the
+            # drug name. article_searcher accepts free-text and covers cases where
+            # the exact gene symbol is unknown.
+            # Removed: search_opentargets/get_protein_interactions (servers offline),
+            # nci_biomarker_searcher/nci_intervention_searcher (require NCI_API_KEY),
+            # variant_searcher (SSL certificate error on this host).
             parallel_calls = [
-                ("gene_getter", {"gene": gene_name}),
-                ("search_opentargets", {"queryString": gene_name}),
-                ("get_protein_interactions", {"identifiers": gene_name}),
-                ("nci_biomarker_searcher", {"query": gene_name}),
-                ("variant_searcher", {"gene": gene_name}),
+                ("gene_getter", {"gene_id_or_symbol": gene_name}),
+                ("article_searcher", {"query": f"{drug_name} {gene_name} gene target mechanism pathway"}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 
             tool_names = [c[0] for c in parallel_calls]
             mcp_map = {
                 "gene_getter": "biomcp",
-                "search_opentargets": "opentargets",
-                "get_protein_interactions": "stringdb",
-                "nci_biomarker_searcher": "biomcp",
-                "variant_searcher": "biomcp",
+                "article_searcher": "biomcp",
             }
             for i, (data, ok) in enumerate(results):
                 if ok and data:
