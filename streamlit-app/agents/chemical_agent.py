@@ -82,7 +82,8 @@ class ChemicalAgent(BaseAgent):
             if compound_ok and compound_data:
                 try:
                     parsed = json.loads(compound_data)
-                    props = parsed.get("PropertyTable", {}).get("Properties", [{}])
+                    details = parsed.get("details", parsed)  # unwrap details wrapper if present
+                    props = details.get("PropertyTable", {}).get("Properties", [{}])
                     if props:
                         smiles    = props[0].get("CanonicalSMILES")
                         first_cid = props[0].get("CID")

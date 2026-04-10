@@ -63,7 +63,7 @@ class LiteratureAgent(BaseAgent):
                 ("search_pubmed",            {"query": drug_name}),
                 ("search_medrxiv_preprints", {"query": drug_name}),
                 ("search_biorxiv_preprints", {"query": drug_name}),
-                ("get_europepmc_articles",   {"query": drug_name}),
+                ("bc_get_europepmc_articles",   {"query": drug_name}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 

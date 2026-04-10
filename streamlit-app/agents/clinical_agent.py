@@ -80,7 +80,7 @@ class ClinicalAgent(BaseAgent):
 
             # Phase 2: BioContext clinical trials enrichment
             biocontext_calls = [
-                ("search_studies", {"query": drug_name}),
+                ("bc_search_studies", {"query": drug_name}),
             ]
             bc_results = await self._call_mcp_tools_parallel(biocontext_calls, ctx)
             for i, (data, ok) in enumerate(bc_results):

@@ -87,9 +87,9 @@ class GeneAgent(BaseAgent):
 
             # Phase 2: BioContext protein / pathway enrichment
             biocontext_calls = [
-                ("get_uniprot_protein_info",   {"query": gene_name}),
-                ("get_string_interactions",    {"query": gene_name}),
-                ("query_open_targets_graphql", {"query": gene_name}),
+                ("bc_get_uniprot_protein_info",   {"query": gene_name}),
+                ("bc_get_string_interactions",    {"query": gene_name}),
+                ("bc_query_open_targets_graphql", {"query": gene_name}),
             ]
             bc_results = await self._call_mcp_tools_parallel(biocontext_calls, ctx)
             for i, (data, ok) in enumerate(bc_results):
