@@ -61,7 +61,7 @@ class ChemicalAgent(BaseAgent):
             # Phase 1: Gather real data from MCP tools in parallel
             parallel_calls = [
                 ("search_compounds_by_name", {"name": drug_name}),
-                ("drug_getter", {"chemical": drug_name}),
+                ("drug_getter", {"drug_id_or_name": drug_name}),
                 ("openfda_label_searcher", {"drug": drug_name}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
