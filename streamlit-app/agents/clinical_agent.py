@@ -28,7 +28,7 @@ class ClinicalAgent(BaseAgent):
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return ["biomcp", "opentargets"]
+        return ["biomcp", "opentargets", "biocontext"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -58,15 +58,15 @@ class ClinicalAgent(BaseAgent):
                 "user_id": context.user_id,
             }
 
+            indication = task.parameters.get("indication", drug_name)
+
             # Phase 1: Gather real data in parallel
-            # Removed nci_intervention_searcher (requires NCI_API_KEY env var).
-            # Fixed disease_getter param: biomcp requires disease_id_or_name, not disease.
             parallel_calls = [
-                ("trial_searcher", {"interventions": drug_name}),
+                ("trial_searcher",           {"interventions": drug_name}),
                 ("openfda_adverse_searcher", {"drug": drug_name}),
-                ("openfda_approval_searcher", {"drug": drug_name}),
-                ("openfda_label_searcher", {"drug": drug_name}),
-                ("disease_getter", {"disease_id_or_name": task.parameters.get("indication", drug_name)}),
+                ("openfda_approval_searcher",{"drug": drug_name}),
+                ("openfda_label_searcher",   {"drug": drug_name}),
+                ("disease_getter",           {"disease_id_or_name": indication}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 
@@ -75,10 +75,20 @@ class ClinicalAgent(BaseAgent):
                 if ok and data:
                     mcp_data[tool_names[i]] = data
                     actual_tools.append(tool_names[i])
-                    actual_mcps.append("biomcp")
+                    if "biomcp" not in actual_mcps:
+                        actual_mcps.append("biomcp")
 
-            # Deduplicate
-            actual_mcps = list(set(actual_mcps))
+            # Phase 2: BioContext clinical trials enrichment
+            biocontext_calls = [
+                ("search_studies", {"query": drug_name}),
+            ]
+            bc_results = await self._call_mcp_tools_parallel(biocontext_calls, ctx)
+            for i, (data, ok) in enumerate(bc_results):
+                if ok and data:
+                    mcp_data[biocontext_calls[i][0]] = data
+                    actual_tools.append(biocontext_calls[i][0])
+                    if "biocontext" not in actual_mcps:
+                        actual_mcps.append("biocontext")
 
             # Phase 2: Synthesize with LLM
             if mcp_data:

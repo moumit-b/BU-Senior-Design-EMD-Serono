@@ -27,7 +27,7 @@ class LiteratureAgent(BaseAgent):
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return ["biomcp", "literature", "medrxiv", "biorxiv"]
+        return ["biomcp", "literature", "medrxiv", "biorxiv", "biocontext"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -59,19 +59,21 @@ class LiteratureAgent(BaseAgent):
 
             # Phase 1: Search across multiple literature sources in parallel
             parallel_calls = [
-                ("article_searcher", {"keywords": [drug_name]}),
-                ("search_pubmed", {"query": drug_name}),
+                ("article_searcher",         {"keywords": [drug_name]}),
+                ("search_pubmed",            {"query": drug_name}),
                 ("search_medrxiv_preprints", {"query": drug_name}),
                 ("search_biorxiv_preprints", {"query": drug_name}),
+                ("get_europepmc_articles",   {"query": drug_name}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 
             tool_names = [c[0] for c in parallel_calls]
             mcp_map = {
-                "article_searcher": "biomcp",
-                "search_pubmed": "literature",
+                "article_searcher":         "biomcp",
+                "search_pubmed":            "literature",
                 "search_medrxiv_preprints": "medrxiv",
                 "search_biorxiv_preprints": "biorxiv",
+                "get_europepmc_articles":   "biocontext",
             }
             for i, (data, ok) in enumerate(results):
                 if ok and data:

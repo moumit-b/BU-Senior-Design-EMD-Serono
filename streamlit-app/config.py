@@ -44,8 +44,8 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 MCP_SERVERS = {
     "pubchem": {
         "command": "node",
-        "args": ["../servers/pubchem/index.js"],
-        "description": "PubChem MCP server for chemical compound data"
+        "args": ["../servers/pubchem-augmented/build/index.js"],
+        "description": "PubChem MCP server (augmented) — 30 tools: compound search, ADMET, drug-likeness, safety, bioassays, similarity"
     },
     "biomcp": {
         "command": "python",
@@ -86,7 +86,13 @@ MCP_SERVERS = {
         "command": "node",
         "args": ["../servers/stringdb/index.js"],
         "description": "STRING-db MCP server (Node.js) for protein-protein interaction networks"
-    }
+    },
+    "biocontext": {
+        "command": "uvx",
+        "args": ["biocontext_kb@latest"],
+        "env": {"UV_PYTHON": "3.12"},
+        "description": "BioContext KB — ~49 tools: AlphaFold, UniProt, STRING, OpenTargets, ClinicalTrials.gov, EuropePMC, KEGG, Reactome, InterPro, OLS ontologies"
+    },
 }
 
 # Persistent Context Layer (Phase 1)

@@ -64,7 +64,8 @@ class MCPToolWrapper:
         
         server_params = StdioServerParameters(
             command=self.server_config["command"],
-            args=self.server_config["args"]
+            args=self.server_config["args"],
+            env=self.server_config.get("env"),
         )
 
         # Create stdio client connection using async context manager

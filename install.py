@@ -37,7 +37,7 @@ SERVERS_DIR = REPO_ROOT / "servers"
 
 # Node.js MCP servers that need npm install
 NODE_SERVERS = [
-    "pubchem",
+    "pubchem-augmented",   # replaces the basic 2-tool pubchem server
     "literature",
     "data_analysis",
     "web_knowledge",
@@ -46,6 +46,11 @@ NODE_SERVERS = [
     "opentargets",
     "stringdb",
 ]
+
+# Servers that need a build step after npm install (TypeScript → JS)
+BUILD_SERVERS = {
+    "pubchem-augmented": ["npm", "run", "build"],
+}
 
 # ── Colours (stripped on Windows if not supported) ─────────────────────────────
 def _supports_colour():
@@ -186,6 +191,17 @@ def install_node_servers():
             ok(f"{name}: installed")
         else:
             err(f"{name}: npm install failed:\n{out}")
+            continue
+
+        # Run build step if required (e.g., TypeScript compilation)
+        build_cmd = BUILD_SERVERS.get(name)
+        if build_cmd:
+            info(f"{name}: running build step ({' '.join(build_cmd)}) …")
+            rc_build, out_build = run(build_cmd, cwd=str(server_dir))
+            if rc_build == 0:
+                ok(f"{name}: built successfully")
+            else:
+                err(f"{name}: build failed:\n{out_build}")
 
 # ── Step 5: .env scaffolding ───────────────────────────────────────────────────
 ENV_TEMPLATE = """\
@@ -270,6 +286,25 @@ def print_summary():
   streamlit run app.py
 """)
 
+# ── Step 4b: uv / uvx (required for BioContext KB MCP server) ─────────────────
+def install_uv():
+    step("Step 4b/5 — uv / uvx (required for BioContext KB)")
+
+    # Check if uvx is already available (may be on PATH or inside venv)
+    uvx_in_venv = VENV_DIR / ("Scripts" if os.name == "nt" else "bin") / ("uvx.exe" if os.name == "nt" else "uvx")
+    rc, out = run([str(uvx_in_venv), "--version"] if uvx_in_venv.exists() else ["uvx", "--version"])
+    if rc == 0:
+        ok(f"uvx already available: {out.strip()}")
+        return
+
+    info("Installing uv into venv (provides the uvx command) …")
+    rc, out = run([str(venv_python()), "-m", "pip", "install", "--quiet", "uv"])
+    if rc == 0:
+        ok("uv installed — uvx command now available")
+    else:
+        warn(f"uv installation failed (BioContext KB server may not start):\n{out}")
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"\n{BOLD}Pharma Research Intelligence System — Installer{RESET}")
@@ -278,6 +313,7 @@ if __name__ == "__main__":
     check_prerequisites()
     setup_venv()
     install_python_deps()
+    install_uv()
     install_node_servers()
     setup_env()
     print_summary()

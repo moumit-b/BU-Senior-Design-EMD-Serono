@@ -29,7 +29,7 @@ class GeneAgent(BaseAgent):
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return ["biomcp", "opentargets", "stringdb"]
+        return ["biomcp", "opentargets", "stringdb", "biocontext"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -62,22 +62,20 @@ class GeneAgent(BaseAgent):
             }
 
             # Phase 1: Gather real data in parallel
-            # Note: gene_getter expects gene_id_or_symbol (e.g. "BRCA1"), not the
-            # drug name. article_searcher accepts free-text and covers cases where
-            # the exact gene symbol is unknown.
-            # Removed: search_opentargets/get_protein_interactions (servers offline),
-            # nci_biomarker_searcher/nci_intervention_searcher (require NCI_API_KEY),
-            # variant_searcher (SSL certificate error on this host).
             parallel_calls = [
-                ("gene_getter", {"gene_id_or_symbol": gene_name}),
-                ("article_searcher", {"query": f"{drug_name} {gene_name} gene target mechanism pathway"}),
+                ("gene_getter",              {"gene_id_or_symbol": gene_name}),
+                ("article_searcher",         {"query": f"{drug_name} {gene_name} gene target mechanism pathway"}),
+                ("search_opentargets",       {"query": gene_name}),
+                ("get_interaction_partners", {"identifier": gene_name}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 
             tool_names = [c[0] for c in parallel_calls]
             mcp_map = {
-                "gene_getter": "biomcp",
-                "article_searcher": "biomcp",
+                "gene_getter":              "biomcp",
+                "article_searcher":         "biomcp",
+                "search_opentargets":       "opentargets",
+                "get_interaction_partners": "stringdb",
             }
             for i, (data, ok) in enumerate(results):
                 if ok and data:
@@ -86,6 +84,20 @@ class GeneAgent(BaseAgent):
                     mcp = mcp_map.get(tool_names[i], "biomcp")
                     if mcp not in actual_mcps:
                         actual_mcps.append(mcp)
+
+            # Phase 2: BioContext protein / pathway enrichment
+            biocontext_calls = [
+                ("get_uniprot_protein_info",   {"query": gene_name}),
+                ("get_string_interactions",    {"query": gene_name}),
+                ("query_open_targets_graphql", {"query": gene_name}),
+            ]
+            bc_results = await self._call_mcp_tools_parallel(biocontext_calls, ctx)
+            for i, (data, ok) in enumerate(bc_results):
+                if ok and data:
+                    mcp_data[biocontext_calls[i][0]] = data
+                    actual_tools.append(biocontext_calls[i][0])
+                    if "biocontext" not in actual_mcps:
+                        actual_mcps.append("biocontext")
 
             # Phase 2: Synthesize with LLM
             if mcp_data:

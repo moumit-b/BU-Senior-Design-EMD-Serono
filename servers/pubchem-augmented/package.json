@@ -1,0 +1,42 @@
+{
+  "name": "pubchem-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for PubChem chemical database access",
+  "main": "build/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && chmod +x build/index.js",
+    "dev": "tsc --watch",
+    "start": "node build/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "pubchem",
+    "chemistry",
+    "chemical-informatics",
+    "drug-discovery",
+    "molecular-properties",
+    "bioassays",
+    "compounds",
+    "ncbi"
+  ],
+  "author": "Augmented Nature <hello@augmentednature.ai>",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/augmentednature/pubchem-mcp-server"
+  },
+  "homepage": "https://augmentednature.ai",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
