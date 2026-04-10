@@ -61,8 +61,10 @@ class ClinicalAgent(BaseAgent):
             indication = task.parameters.get("indication", drug_name)
 
             # Phase 1: Gather real data in parallel
+            # trial_searcher removed — consistently returns 403 from the upstream
+            # ClinicalTrials.gov API via BioMCP; bc_search_studies (Phase 2) covers
+            # the same data via BioContext and is working reliably.
             parallel_calls = [
-                ("trial_searcher",           {"interventions": drug_name}),
                 ("openfda_adverse_searcher", {"drug": drug_name}),
                 ("openfda_approval_searcher",{"drug": drug_name}),
                 ("openfda_label_searcher",   {"drug": drug_name}),
