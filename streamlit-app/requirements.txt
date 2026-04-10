@@ -1,49 +1,78 @@
-# Streamlit for UI
+# ─────────────────────────────────────────────────────────────────────────────
+# Pharma Research Intelligence System — Python Dependencies
+#
+# Install via the one-shot installer (recommended for new machines):
+#   python install.py          (from repo root)
+#
+# Or manually (from streamlit-app/ with venv active):
+#   pip install -r requirements.txt
+#
+# Requires: Python 3.10+, Node.js 18+ (for MCP servers)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── UI ────────────────────────────────────────────────────────────────────────
 streamlit>=1.32.0
 
-# LangChain for agent framework
-langchain>=0.1.0
-langchain-core>=0.1.0
-langchain-community>=0.0.20
 
-# Anthropic Claude integration for LangChain (PRIMARY LLM)
-langchain-anthropic>=0.3.0
+# ── LLM providers ─────────────────────────────────────────────────────────────
+# Anthropic Claude (primary)
 anthropic>=0.40.0
+langchain-anthropic>=0.3.0
 
-# OpenAI integration for Azure OpenAI and Bedrock compatibility
+# Ollama (local models: qwen3, llama3, deepseek-r1, etc.)
+langchain-ollama>=0.2.0
+
+# OpenAI / Azure OpenAI compatibility shim
 langchain-openai>=0.1.0
 openai>=1.0.0
 
-# Ollama integration for local LLM models (qwen3, llama3, etc.)
-langchain-ollama>=0.2.0
 
-# LangGraph for agent orchestration (dual orchestration system)
+# ── LangChain + LangGraph ─────────────────────────────────────────────────────
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-community>=0.0.20
 langgraph>=0.2.0
 
-# MCP SDK for connecting to MCP servers
+
+# ── MCP (Model Context Protocol) ─────────────────────────────────────────────
+# Python SDK for connecting to MCP stdio servers
 mcp>=0.9.0
 
-# BioMCP for biomedical research tools
+# BioMCP: PubMed, ClinicalTrials.gov, OpenFDA, genes, variants, biomarkers
+# Requires NCI_API_KEY env var for nci_* tools (free key at clinicaltrialsapi.cancer.gov)
+# Requires BIOMCP_DISABLE_SSL=true on corporate/Windows networks with SSL interception
 biomcp-python>=0.7.0
 
-# HTTP client for MCP
+
+# ── HTTP / async ──────────────────────────────────────────────────────────────
 httpx>=0.25.0
 
-# Additional utilities
+
+# ── Configuration and environment ─────────────────────────────────────────────
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 
-# Persistent Context Layer (required for DB models even when feature is disabled)
-sqlalchemy>=2.0.0
-markdown>=3.5.0
 
-# Persistent Context Layer - vector search (Required for Context Forge)
+# ── Persistent context + vector search (Context Forge / ChromaDB) ─────────────
+sqlalchemy>=2.0.0
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
 numpy>=1.24.0
 
-# Optional: PDF report export (requires system-level GTK/Cairo libraries)
+
+# ── Report generation ─────────────────────────────────────────────────────────
+markdown>=3.5.0
+
+# PDF export via WeasyPrint
+# Requires system-level libraries:
+#   Windows: install GTK3 from https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer
+#   macOS:   brew install pango gdk-pixbuf libffi
+#   Linux:   apt install libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf2.0-0
 weasyprint>=60.0
 
-# Optional: Tavily web search integration
+
+# ── Web search integration ────────────────────────────────────────────────────
+# Tavily: powers tavily_web_search tool in the chat agent
+# Free tier available at https://tavily.com — set TAVILY_API_KEY in .env
 tavily-python>=0.3.0
