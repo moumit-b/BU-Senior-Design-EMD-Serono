@@ -78,48 +78,66 @@ def initialize_agent_with_config(config_name: str, _cache_buster: str = None):
                     from mcp_tools import get_mcp_loop
                     loop = get_mcp_loop()
 
-                    # Run initialize_mcp_tools in the background loop
+                    # BioContext KB uses uvx which downloads packages on first run —
+                    # allow up to 5 minutes so we don't get a spurious TimeoutError.
                     future = asyncio.run_coroutine_threadsafe(
                         initialize_mcp_tools(mcp_servers),
                         loop
                     )
-                    tools = future.result(timeout=60)
+                    tools = future.result(timeout=300)
 
                     if tools:
                         st.info(f"Connected to MCP servers, loaded {len(tools)} tools")
-
-                    # --- Context Forge Gateway ---
-                    # Register live MCP wrappers with the governance gateway
-                    feature_flags = config_data.get("feature_flags", {})
-                    governance_enabled = feature_flags.get("use_governance_gateway", True)
-
-                    if _active_wrappers and governance_enabled:
-                        gateway = ContextForgeGateway()
-                        gateway.register_mcp_wrappers(_active_wrappers)
-                        st.session_state["gateway"] = gateway
-
-                        # Create MCPOrchestrator with gateway for specialized agents
-                        from orchestration.mcp_orchestrator import MCPOrchestrator
-                        mcp_orchestrator = MCPOrchestrator(mcp_wrappers=_active_wrappers)
-                        mcp_orchestrator.set_gateway(gateway)
-                        st.session_state["mcp_orchestrator"] = mcp_orchestrator
-
-                        st.info(
-                            f"Context Forge Gateway active: "
-                            f"{len(_active_wrappers)} MCP server(s) governed, "
-                            f"{len(mcp_orchestrator.get_all_tool_names())} tools indexed"
-                        )
-
-                    elif _active_wrappers:
-                        # Orchestrator without governance (direct mode)
-                        from orchestration.mcp_orchestrator import MCPOrchestrator
-                        mcp_orchestrator = MCPOrchestrator(mcp_wrappers=_active_wrappers)
-                        st.session_state["mcp_orchestrator"] = mcp_orchestrator
-                        st.info(f"MCPOrchestrator active (no governance): {len(mcp_orchestrator.get_all_tool_names())} tools indexed")
+                    else:
+                        st.warning("MCP servers connected but returned no tools")
 
                 except Exception as mcp_error:
-                    st.warning(f"MCP servers not available: {str(mcp_error)}")
+                    import traceback as _tb
+                    print(f"[ERROR] MCP initialization failed: {type(mcp_error).__name__}: {mcp_error}")
+                    print(_tb.format_exc())
+                    st.warning(f"MCP servers not available: {type(mcp_error).__name__}: {mcp_error}")
                     st.info("Running in direct LLM mode without MCP tools")
+
+                # --- Context Forge Gateway + MCPOrchestrator ---
+                # Separated from the MCP loading try/except so a governance
+                # error cannot mask successful tool loading.
+                if _active_wrappers:
+                    feature_flags = config_data.get("feature_flags", {})
+                    governance_enabled = feature_flags.get("use_governance_gateway", True)
+                    try:
+                        if governance_enabled:
+                            gateway = ContextForgeGateway()
+                            gateway.register_mcp_wrappers(_active_wrappers)
+                            st.session_state["gateway"] = gateway
+
+                            from orchestration.mcp_orchestrator import MCPOrchestrator
+                            mcp_orchestrator = MCPOrchestrator(mcp_wrappers=_active_wrappers)
+                            mcp_orchestrator.set_gateway(gateway)
+                            st.session_state["mcp_orchestrator"] = mcp_orchestrator
+
+                            st.info(
+                                f"Context Forge Gateway active: "
+                                f"{len(_active_wrappers)} MCP server(s) governed, "
+                                f"{len(mcp_orchestrator.get_all_tool_names())} tools indexed"
+                            )
+                        else:
+                            from orchestration.mcp_orchestrator import MCPOrchestrator
+                            mcp_orchestrator = MCPOrchestrator(mcp_wrappers=_active_wrappers)
+                            st.session_state["mcp_orchestrator"] = mcp_orchestrator
+                            st.info(f"MCPOrchestrator active (no governance): {len(mcp_orchestrator.get_all_tool_names())} tools indexed")
+
+                    except Exception as gw_error:
+                        import traceback as _tb
+                        print(f"[ERROR] Gateway/Orchestrator setup failed: {type(gw_error).__name__}: {gw_error}")
+                        print(_tb.format_exc())
+                        st.warning(f"Governance gateway unavailable ({type(gw_error).__name__}): specialized agents will use direct MCP calls")
+                        # Still create the orchestrator without governance
+                        try:
+                            from orchestration.mcp_orchestrator import MCPOrchestrator
+                            mcp_orchestrator = MCPOrchestrator(mcp_wrappers=_active_wrappers)
+                            st.session_state["mcp_orchestrator"] = mcp_orchestrator
+                        except Exception:
+                            pass
             else:
                 st.info("Running in direct LLM mode without MCP tools")
             
