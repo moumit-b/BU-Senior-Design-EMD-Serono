@@ -872,6 +872,20 @@ class PubChemServer {
         ],
       };
     } catch (error) {
+      // PubChem returns 404 when a query matches no compounds (e.g. protein names
+      // like "PD-L1"). Treat this as an empty result rather than an error so the
+      // agent can fall back to other tools gracefully.
+      const status = (error as any)?.response?.status;
+      if (status === 404) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ message: 'No compounds found', query: (args as any).query }, null, 2),
+            },
+          ],
+        };
+      }
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to search compounds: ${error instanceof Error ? error.message : 'Unknown error'}`

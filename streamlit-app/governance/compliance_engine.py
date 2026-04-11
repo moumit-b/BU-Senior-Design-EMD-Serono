@@ -30,9 +30,10 @@ class ComplianceEngine:
         # ---- PII / PHI patterns ----
         self.pii_patterns: List[Dict[str, str]] = [
             {"name": "SSN", "pattern": r"\b\d{3}-\d{2}-\d{4}\b"},
-            # Require delimiter-separated groups to avoid false positives on
-            # chemical data (CIDs, InChI keys, molecular weights, SMILES, etc.)
-            {"name": "Credit Card", "pattern": r"\b\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}\b"},
+            # Require delimiter-separated groups AND a valid BIN first digit (3-6)
+            # to avoid false positives on ORCID IDs (0000-XXXX-XXXX-XXXX),
+            # chemical data, and other scientific identifiers.
+            {"name": "Credit Card", "pattern": r"\b[3-6]\d{3}[- ]\d{4}[- ]\d{4}[- ]\d{4}\b"},
             {"name": "Email", "pattern": r"\b[\w\.-]+@[\w\.-]+\.\w{2,}\b"},
             # PHI-specific
             {"name": "MRN", "pattern": r"\bMRN[:\s]*\d{6,10}\b"},
