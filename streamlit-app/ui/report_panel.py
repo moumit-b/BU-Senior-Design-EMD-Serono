@@ -315,21 +315,33 @@ def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_t
 # ---------------------------------------------------------------------------
 
 def _display_report(report_md: str, drug_name: str) -> None:
-    """Display the generated report with download option."""
+    """Display the generated report with download options."""
+    from reporting.exporters.pdf_exporter import PDFExporter
     safe_name = drug_name.replace(" ", "_").replace("/", "-")
     today = datetime.date.today().isoformat()
-    filename = f"CI_Report_{safe_name}_{today}.md"
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
             label="Download (.md)",
             data=report_md,
-            file_name=filename,
+            file_name=f"CI_Report_{safe_name}_{today}.md",
             mime="text/markdown",
             use_container_width=True,
         )
     with col2:
+        try:
+            pdf_bytes = PDFExporter().export({"markdown": report_md})
+            st.download_button(
+                label="Download (.pdf)",
+                data=pdf_bytes,
+                file_name=f"CI_Report_{safe_name}_{today}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        except Exception as e:
+            st.caption(f"PDF unavailable: {e}")
+    with col3:
         if st.button("Clear Report", use_container_width=True):
             st.session_state.generated_report = None
             st.session_state.pop("report_dev_log", None)
@@ -345,13 +357,24 @@ def _render_past_reports(db_manager, drug_name: Optional[str] = None) -> None:
         return
     try:
         from context.db_models import ReportRecord
+        from reporting.exporters.pdf_exporter import PDFExporter
         with db_manager.get_session() as session:
             q = session.query(ReportRecord).order_by(ReportRecord.created_at.desc()).limit(20)
             if drug_name:
                 q = session.query(ReportRecord).filter(
                     ReportRecord.drug_name.ilike(f"%{drug_name}%")
                 ).order_by(ReportRecord.created_at.desc()).limit(10)
-            records = q.all()
+            # Materialize into plain dicts before session closes to avoid DetachedInstanceError
+            records = [
+                {
+                    "report_id": r.report_id,
+                    "drug_name": r.drug_name,
+                    "report_type": r.report_type,
+                    "content_md": r.content_md,
+                    "created_at": r.created_at,
+                }
+                for r in q.all()
+            ]
 
         if not records:
             return
@@ -359,24 +382,37 @@ def _render_past_reports(db_manager, drug_name: Optional[str] = None) -> None:
         label = f"Past Reports — {drug_name}" if drug_name else "Past Reports"
         with st.expander(label, expanded=True):
             for r in records:
-                date_str = r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "unknown"
-                col_info, col_view, col_dl = st.columns([3, 1, 1])
+                date_str = r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else "unknown"
+                col_info, col_view, col_md, col_pdf = st.columns([3, 1, 1, 1])
                 with col_info:
-                    st.markdown(f"**{r.drug_name}** · {REPORT_TYPES.get(r.report_type, r.report_type)} · {date_str}")
+                    st.markdown(f"**{r['drug_name']}** · {REPORT_TYPES.get(r['report_type'], r['report_type'])} · {date_str}")
                 with col_view:
-                    if st.button("View", key=f"view_{r.report_id}"):
-                        st.session_state.generated_report = r.content_md
-                        st.session_state.identified_drug = r.drug_name
+                    if st.button("View", key=f"view_{r['report_id']}"):
+                        st.session_state.generated_report = r["content_md"]
+                        st.session_state.identified_drug = r["drug_name"]
                         st.rerun()
-                with col_dl:
-                    safe = r.drug_name.replace(" ", "_")
+                with col_md:
+                    safe = r["drug_name"].replace(" ", "_")
+                    date_sfx = r["created_at"].strftime("%Y%m%d") if r["created_at"] else "report"
                     st.download_button(
-                        "↓",
-                        data=r.content_md,
-                        file_name=f"CI_{safe}_{r.created_at.strftime('%Y%m%d') if r.created_at else 'report'}.md",
+                        ".md",
+                        data=r["content_md"],
+                        file_name=f"CI_{safe}_{date_sfx}.md",
                         mime="text/markdown",
-                        key=f"dl_{r.report_id}",
+                        key=f"dl_md_{r['report_id']}",
                     )
+                with col_pdf:
+                    try:
+                        pdf_bytes = PDFExporter().export({"markdown": r["content_md"]})
+                        st.download_button(
+                            ".pdf",
+                            data=pdf_bytes,
+                            file_name=f"CI_{safe}_{date_sfx}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_pdf_{r['report_id']}",
+                        )
+                    except Exception:
+                        st.caption("—")
     except Exception as e:
         logger.warning(f"_render_past_reports error: {e}")
 

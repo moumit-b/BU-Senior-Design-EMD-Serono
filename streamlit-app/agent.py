@@ -61,13 +61,28 @@ class MCPAgent:
                 "Run: pip install -r requirements.txt"
             )
 
-    def _create_prompt(self, question: str) -> str:
+    def _create_prompt(self, question: str, conversation_history: list = None) -> str:
         """Create a prompt for the LLM with available tools."""
+        history_block = ""
+        if conversation_history:
+            recent = conversation_history[-10:]
+            lines = []
+            for msg in recent:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    lines.append(f"User: {content}")
+                elif role == "assistant":
+                    # Truncate long assistant responses to keep the prompt manageable
+                    truncated = content[:500] + "..." if len(content) > 500 else content
+                    lines.append(f"Assistant: {truncated}")
+            if lines:
+                history_block = "CONVERSATION HISTORY (use for context on follow-up questions):\n" + "\n".join(lines) + "\n\n"
+
         if not self.tools:
             return f"""You are a helpful AI assistant specialized in pharmaceutical research, chemistry, biology, and drug development.
 
-
-Please answer the following question to the best of your knowledge:
+{history_block}Please answer the following question to the best of your knowledge:
 
 Question: {question}
 
@@ -98,7 +113,7 @@ FINAL ANSWER: your complete research summary here
 6. DO NOT provide conversational filler or reasoning steps
 7. Start with a tool call to gather information, then provide FINAL ANSWER
 
-Question: {question}
+{history_block}Question: {question}
 
 Begin by selecting an appropriate tool from the available list:"""
 
@@ -138,12 +153,14 @@ Begin by selecting an appropriate tool from the available list:"""
 
         return results
 
-    def query(self, question: str) -> Dict[str, Any]:
+    def query(self, question: str, conversation_history: list = None) -> Dict[str, Any]:
         """
         Query the agent with a question.
 
         Args:
             question: The question to ask the agent
+            conversation_history: Optional list of prior messages for context.
+                Each message is a dict with 'role' and 'content' keys.
 
         Returns:
             Dictionary with 'output' and 'intermediate_steps'
@@ -155,7 +172,7 @@ Begin by selecting an appropriate tool from the available list:"""
             }
 
         intermediate_steps = []
-        conversation = self._create_prompt(question)
+        conversation = self._create_prompt(question, conversation_history=conversation_history)
 
         # If no tools, use direct LLM mode
         if not self.tools:

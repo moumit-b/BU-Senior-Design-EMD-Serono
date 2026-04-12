@@ -590,7 +590,7 @@ def main() -> None:
 
             with st.chat_message("assistant"):
                 with st.spinner("Researching…"):
-                    result = agent.query(prompt)
+                    result = agent.query(prompt, conversation_history=st.session_state.messages)
                     response = result.get("output", "No response generated.")
                     steps = result.get("intermediate_steps", [])
 
