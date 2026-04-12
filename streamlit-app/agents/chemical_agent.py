@@ -14,8 +14,8 @@ from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 class ChemicalAgent(BaseAgent):
     """Chemical compound specialist agent."""
 
-    def __init__(self, mcp_orchestrator, llm=None):
-        super().__init__("ChemicalAgent", mcp_orchestrator, llm)
+    def __init__(self, mcp_orchestrator, llm=None, tool_tracker=None):
+        super().__init__("ChemicalAgent", mcp_orchestrator, llm, tool_tracker=tool_tracker)
 
     def _define_capabilities(self) -> List[str]:
         return [
@@ -28,7 +28,7 @@ class ChemicalAgent(BaseAgent):
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return ["pubchem", "biomcp", "chembl"]
+        return ["pubchem", "biomcp"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -58,22 +58,55 @@ class ChemicalAgent(BaseAgent):
                 "user_id": context.user_id,
             }
 
-            # Phase 1: Gather real data from MCP tools in parallel
-            parallel_calls = [
-                ("search_compounds_by_name", {"name": drug_name}),
-                ("drug_getter", {"chemical": drug_name}),
-                ("openfda_label_searcher", {"drug": drug_name}),
+            # Phase 1: Core compound + drug info in parallel
+            phase1_calls = [
+                ("search_compounds", {"query": drug_name}),       # augmented PubChem (30 tools)
+                ("drug_getter", {"drug_id_or_name": drug_name}),  # biomcp
+                ("openfda_label_searcher", {"drug": drug_name}),  # biomcp
             ]
-            results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
+            phase1_results = await self._call_mcp_tools_parallel(phase1_calls, ctx)
 
-            tool_names = ["search_compounds_by_name", "drug_getter", "openfda_label_searcher"]
-            mcp_names = ["pubchem", "biomcp", "biomcp"]
-            for i, (data, ok) in enumerate(results):
+            phase1_tool_names = ["search_compounds", "drug_getter", "openfda_label_searcher"]
+            phase1_mcp_names  = ["pubchem", "biomcp", "biomcp"]
+            for i, (data, ok) in enumerate(phase1_results):
                 if ok and data:
-                    mcp_data[tool_names[i]] = data
-                    actual_tools.append(tool_names[i])
-                    if mcp_names[i] not in actual_mcps:
-                        actual_mcps.append(mcp_names[i])
+                    mcp_data[phase1_tool_names[i]] = data
+                    actual_tools.append(phase1_tool_names[i])
+                    if phase1_mcp_names[i] not in actual_mcps:
+                        actual_mcps.append(phase1_mcp_names[i])
+
+            # Phase 2: ADMET, drug-likeness, safety — require CID or SMILES from Phase 1.
+            # Extract from search_compounds result (returns PropertyTable with CID + CanonicalSMILES).
+            smiles, first_cid = None, None
+            compound_data, compound_ok = phase1_results[0]
+            if compound_ok and compound_data:
+                try:
+                    parsed = json.loads(compound_data)
+                    details = parsed.get("details", parsed)  # unwrap details wrapper if present
+                    props = details.get("PropertyTable", {}).get("Properties", [{}])
+                    if props:
+                        smiles    = props[0].get("CanonicalSMILES")
+                        first_cid = props[0].get("CID")
+                except Exception:
+                    pass
+
+            if smiles or first_cid:
+                id_params = {"smiles": smiles} if smiles else {"cid": first_cid}
+                phase2_calls = [
+                    ("predict_admet_properties", id_params),
+                    ("assess_drug_likeness",     id_params),
+                ]
+                if first_cid:
+                    phase2_calls.append(("get_safety_data", {"cid": first_cid}))
+
+                phase2_results = await self._call_mcp_tools_parallel(phase2_calls, ctx)
+                phase2_tool_names = [c[0] for c in phase2_calls]
+                for i, (data, ok) in enumerate(phase2_results):
+                    if ok and data:
+                        mcp_data[phase2_tool_names[i]] = data
+                        actual_tools.append(phase2_tool_names[i])
+                        if "pubchem" not in actual_mcps:
+                            actual_mcps.append("pubchem")
 
             # Phase 2: Synthesize with LLM
             if mcp_data:

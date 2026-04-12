@@ -14,8 +14,8 @@ from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 class GeneAgent(BaseAgent):
     """Gene and target biology specialist agent."""
 
-    def __init__(self, mcp_orchestrator, llm=None):
-        super().__init__("GeneAgent", mcp_orchestrator, llm)
+    def __init__(self, mcp_orchestrator, llm=None, tool_tracker=None):
+        super().__init__("GeneAgent", mcp_orchestrator, llm, tool_tracker=tool_tracker)
 
     def _define_capabilities(self) -> List[str]:
         return [
@@ -29,7 +29,7 @@ class GeneAgent(BaseAgent):
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return ["biomcp", "opentargets", "stringdb"]
+        return ["biomcp", "opentargets", "stringdb", "biocontext"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -63,21 +63,19 @@ class GeneAgent(BaseAgent):
 
             # Phase 1: Gather real data in parallel
             parallel_calls = [
-                ("gene_getter", {"gene": gene_name}),
-                ("search_opentargets", {"queryString": gene_name}),
-                ("get_protein_interactions", {"identifiers": gene_name}),
-                ("nci_biomarker_searcher", {"query": gene_name}),
-                ("variant_searcher", {"gene": gene_name}),
+                ("gene_getter",              {"gene_id_or_symbol": gene_name}),
+                ("article_searcher",         {"query": f"{drug_name} {gene_name} gene target mechanism pathway"}),
+                ("search_opentargets",       {"query": gene_name}),
+                ("get_interaction_partners", {"identifier": gene_name}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 
             tool_names = [c[0] for c in parallel_calls]
             mcp_map = {
-                "gene_getter": "biomcp",
-                "search_opentargets": "opentargets",
-                "get_protein_interactions": "stringdb",
-                "nci_biomarker_searcher": "biomcp",
-                "variant_searcher": "biomcp",
+                "gene_getter":              "biomcp",
+                "article_searcher":         "biomcp",
+                "search_opentargets":       "opentargets",
+                "get_interaction_partners": "stringdb",
             }
             for i, (data, ok) in enumerate(results):
                 if ok and data:
@@ -86,6 +84,20 @@ class GeneAgent(BaseAgent):
                     mcp = mcp_map.get(tool_names[i], "biomcp")
                     if mcp not in actual_mcps:
                         actual_mcps.append(mcp)
+
+            # Phase 2: BioContext protein / pathway enrichment
+            biocontext_calls = [
+                ("bc_get_uniprot_protein_info",   {"query": gene_name}),
+                ("bc_get_string_interactions",    {"query": gene_name}),
+                ("bc_query_open_targets_graphql", {"query": gene_name}),
+            ]
+            bc_results = await self._call_mcp_tools_parallel(biocontext_calls, ctx)
+            for i, (data, ok) in enumerate(bc_results):
+                if ok and data:
+                    mcp_data[biocontext_calls[i][0]] = data
+                    actual_tools.append(biocontext_calls[i][0])
+                    if "biocontext" not in actual_mcps:
+                        actual_mcps.append("biocontext")
 
             # Phase 2: Synthesize with LLM
             if mcp_data:

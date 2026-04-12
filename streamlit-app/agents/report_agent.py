@@ -287,14 +287,15 @@ class ReportAgent(BaseAgent):
         report_markdown = result.result_data["report"]
     """
 
-    def __init__(self, mcp_orchestrator=None, llm=None, config_data=None):
+    def __init__(self, mcp_orchestrator=None, llm=None, config_data=None, tool_tracker=None):
         self._config_data = config_data
+        self._tool_tracker = tool_tracker
 
         if llm is None and config_data is not None:
             from utils.llm_factory import get_llm_from_config
             llm = get_llm_from_config(config_data, temperature=0.3, max_tokens=16384)
 
-        super().__init__("ReportAgent", mcp_orchestrator, llm)
+        super().__init__("ReportAgent", mcp_orchestrator, llm, tool_tracker=tool_tracker)
 
         # Pre-load the EMD format template
         self._emd_format = _load_emd_format()
@@ -311,11 +312,11 @@ class ReportAgent(BaseAgent):
         from .data_agent import DataAgent
 
         agents = {
-            "chemical": ChemicalAgent(self.mcp_orchestrator, self.llm),
-            "clinical": ClinicalAgent(self.mcp_orchestrator, self.llm),
-            "gene": GeneAgent(self.mcp_orchestrator, self.llm),
-            "literature": LiteratureAgent(self.mcp_orchestrator, self.llm),
-            "data": DataAgent(self.mcp_orchestrator, self.llm),
+            "chemical": ChemicalAgent(self.mcp_orchestrator, self.llm, tool_tracker=self._tool_tracker),
+            "clinical": ClinicalAgent(self.mcp_orchestrator, self.llm, tool_tracker=self._tool_tracker),
+            "gene": GeneAgent(self.mcp_orchestrator, self.llm, tool_tracker=self._tool_tracker),
+            "literature": LiteratureAgent(self.mcp_orchestrator, self.llm, tool_tracker=self._tool_tracker),
+            "data": DataAgent(self.mcp_orchestrator, self.llm, tool_tracker=self._tool_tracker),
         }
         _log(f"Created {len(agents)} specialized agents (mcp_orchestrator={'active' if self.mcp_orchestrator else 'None'})")
         return agents
@@ -360,10 +361,14 @@ class ReportAgent(BaseAgent):
             drug_name = params.get("drug_name", task.query)
             report_type = params.get("report_type", "competitive_intelligence")
             conversation_context = params.get("conversation_context", "")
+            prior_reports_context = params.get("prior_reports_context", "")
+            related_chat_history = params.get("related_chat_history", "")
 
             if report_type == "competitive_intelligence":
                 report_md, mcps_used, tools_used = await self._generate_ci_report(
-                    drug_name, conversation_context, context
+                    drug_name, conversation_context, context,
+                    prior_reports_context=prior_reports_context,
+                    related_chat_history=related_chat_history,
                 )
             else:
                 report_md = f"# Report\n\nReport type '{report_type}' is not yet implemented."
@@ -395,6 +400,8 @@ class ReportAgent(BaseAgent):
         drug_name: str,
         conversation_context: str,
         agent_context: AgentContext,
+        prior_reports_context: str = "",
+        related_chat_history: str = "",
     ) -> tuple:
         """Generate CI report by dispatching all 18 sections in parallel.
 
@@ -428,6 +435,8 @@ class ReportAgent(BaseAgent):
                     conversation_context=conversation_context,
                     agent_context=agent_context,
                     detailed=section["id"] in _DETAILED_SECTION_IDS,
+                    prior_reports_context=prior_reports_context,
+                    related_chat_history=related_chat_history,
                 )
                 coros.append((section["id"], coro))
 
@@ -472,6 +481,8 @@ class ReportAgent(BaseAgent):
         conversation_context: str,
         agent_context: AgentContext,
         detailed: bool,
+        prior_reports_context: str = "",
+        related_chat_history: str = "",
     ) -> tuple:
         """Research a single section by dispatching to specialized agents, then synthesize.
 
@@ -523,6 +534,8 @@ class ReportAgent(BaseAgent):
             mcp_data_blocks=mcp_data_blocks,
             conversation_context=conversation_context,
             detailed=detailed,
+            prior_reports_context=prior_reports_context,
+            related_chat_history=related_chat_history,
         )
 
         return section_md, section_mcps, section_tools
@@ -581,6 +594,8 @@ class ReportAgent(BaseAgent):
         mcp_data_blocks: Dict[str, Any],
         conversation_context: str,
         detailed: bool,
+        prior_reports_context: str = "",
+        related_chat_history: str = "",
     ) -> str:
         """Use LLM to write a section using real agent/MCP data + EMD template."""
 
@@ -622,9 +637,19 @@ class ReportAgent(BaseAgent):
 
         context_block = ""
         if conversation_context:
-            context_block = (
-                f"\n\nThe user has been researching {drug_name}. "
+            context_block += (
+                f"\n\n## Current Research Session\nThe user is actively researching {drug_name}. "
                 f"Relevant conversation:\n{conversation_context[:2000]}"
+            )
+        if related_chat_history:
+            context_block += (
+                f"\n\n## Related Past Conversations (from previous sessions)\n"
+                f"{related_chat_history[:2000]}"
+            )
+        if prior_reports_context:
+            context_block += (
+                f"\n\n## Prior Reports on {drug_name} (for continuity — do not duplicate, build on these)\n"
+                f"{prior_reports_context[:2000]}"
             )
 
         # Indicate data sourcing in prompt

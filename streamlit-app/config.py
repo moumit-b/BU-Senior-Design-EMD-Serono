@@ -44,8 +44,8 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 MCP_SERVERS = {
     "pubchem": {
         "command": "node",
-        "args": ["../servers/pubchem/index.js"],
-        "description": "PubChem MCP server for chemical compound data"
+        "args": ["../servers/pubchem-augmented/build/index.js"],
+        "description": "PubChem MCP server (augmented) — 30 tools: compound search, ADMET, drug-likeness, safety, bioassays, similarity"
     },
     "biomcp": {
         "command": "python",
@@ -86,22 +86,32 @@ MCP_SERVERS = {
         "command": "node",
         "args": ["../servers/stringdb/index.js"],
         "description": "STRING-db MCP server (Node.js) for protein-protein interaction networks"
-    }
+    },
+    "biocontext": {
+        "command": "uvx",
+        "args": ["biocontext_kb@latest"],
+        "env": {"UV_PYTHON": "3.12"},
+        "description": "BioContext KB — ~49 tools: AlphaFold, UniProt, STRING, OpenTargets, ClinicalTrials.gov, EuropePMC, KEGG, Reactome, InterPro, OLS ontologies"
+    },
 }
 
-# Persistent Context Layer (Phase 1)
-DATABASE_PATH = "data/sessions.db"
-VECTOR_STORE_PATH = "data/chroma"
+# Persistent Context Layer
+# Cross-machine: set SUPABASE_DB_URL in .env to use PostgreSQL (Supabase).
+# Falls back to local SQLite when SUPABASE_DB_URL is not set.
+DATABASE_PATH = "data/sessions.db"       # SQLite fallback path
+VECTOR_STORE_PATH = "data/chroma"        # Legacy ChromaDB path (queries/entities/insights)
 
-# Feature Flags - Enable/disable new features
+# Feature Flags
 FEATURE_FLAGS = {
-    "use_persistent_context": False,     # Phase 1: SQLite + ChromaDB (disabled - download timeout issue)
+    "use_persistent_context": True,      # Phase 1: Database persistence - ENABLED
     "use_specialized_agents": True,      # Phase 1: Chemical, Clinical, etc. - WORKING
     "use_governance_gateway": True,      # Phase 2: Context Forge Gateway - ENABLED
     "use_langgraph_orchestrator": True,  # Phase 3: Orchestrator - REQUIRED for queries
     "use_bidirectional_learning": False, # Phase 4: MCP-Agent learning (future)
     "enable_reporting": True,            # Phase 5: PDF/Markdown reports - WORKING
-    "enable_ui_v2": False               # Phase 6: Enhanced UI (future)
+    "enable_ui_v2": True,               # Phase 6: Enhanced UI - ENABLED
+    "enable_auth": True,                 # Auth gate (admin/admin for dev team)
+    "enable_tool_metrics": True,         # Persistent tool call metrics
 }
 
 # Agent settings

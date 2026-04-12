@@ -20,8 +20,8 @@ class DataAgent(BaseAgent):
     - Playwright (dashboard data extraction)
     """
 
-    def __init__(self, mcp_orchestrator, llm=None):
-        super().__init__("DataAgent", mcp_orchestrator, llm)
+    def __init__(self, mcp_orchestrator, llm=None, tool_tracker=None):
+        super().__init__("DataAgent", mcp_orchestrator, llm, tool_tracker=tool_tracker)
 
     def _define_capabilities(self) -> List[str]:
         return [

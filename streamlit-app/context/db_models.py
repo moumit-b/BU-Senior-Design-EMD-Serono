@@ -237,3 +237,132 @@ class PerformancePatternRecord(Base):
 
     def __repr__(self):
         return f"<Pattern(id={self.pattern_id}, type={self.pattern_type})>"
+
+
+# ---------------------------------------------------------------------------
+# New tables: auth, chat history, reports, tool metrics, vector embeddings
+# ---------------------------------------------------------------------------
+
+import uuid as _uuid
+
+try:
+    from pgvector.sqlalchemy import Vector as _PGVector
+    _PGVECTOR_AVAILABLE = True
+except ImportError:
+    _PGVector = None
+    _PGVECTOR_AVAILABLE = False
+
+from sqlalchemy import UniqueConstraint
+
+
+class UserRecord(Base):
+    """User authentication table."""
+    __tablename__ = "users"
+
+    user_id = Column(String(100), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    username = Column(String(100), nullable=False, unique=True, index=True)
+    password_hash = Column(String(64), nullable=False)
+    display_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    chat_sessions = relationship("ChatSessionRecord", back_populates="user", cascade="all, delete-orphan")
+    reports = relationship("ReportRecord", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<User(id={self.user_id}, username={self.username})>"
+
+
+class ChatSessionRecord(Base):
+    """Persistent chat session (one conversation thread per session)."""
+    __tablename__ = "chat_sessions"
+
+    chat_session_id = Column(String(100), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    user_id = Column(String(100), ForeignKey("users.user_id"), nullable=False, index=True)
+    title = Column(String(255), default="New Conversation", nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    config_name = Column(String(50), default="standard", nullable=False)
+    is_archived = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("UserRecord", back_populates="chat_sessions")
+    messages = relationship("ChatMessageRecord", back_populates="session", cascade="all, delete-orphan", order_by="ChatMessageRecord.sequence_number")
+    reports = relationship("ReportRecord", back_populates="chat_session", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<ChatSession(id={self.chat_session_id}, title={self.title})>"
+
+
+class ChatMessageRecord(Base):
+    """Individual message within a chat session."""
+    __tablename__ = "chat_messages"
+
+    message_id = Column(String(100), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    chat_session_id = Column(String(100), ForeignKey("chat_sessions.chat_session_id"), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # "user" or "assistant"
+    content = Column(Text, nullable=False)
+    steps_json = Column(JSON, nullable=True)  # intermediate agent reasoning steps
+    timestamp = Column(DateTime, default=datetime.now, nullable=False)
+    sequence_number = Column(Integer, nullable=False, default=0)
+
+    session = relationship("ChatSessionRecord", back_populates="messages")
+
+    def __repr__(self):
+        return f"<ChatMessage(id={self.message_id}, role={self.role}, seq={self.sequence_number})>"
+
+
+class ReportRecord(Base):
+    """Generated reports linked to a chat session."""
+    __tablename__ = "reports"
+
+    report_id = Column(String(100), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    chat_session_id = Column(String(100), ForeignKey("chat_sessions.chat_session_id"), nullable=False, index=True)
+    user_id = Column(String(100), ForeignKey("users.user_id"), nullable=False, index=True)
+    drug_name = Column(String(255), nullable=False, index=True)
+    report_type = Column(String(100), nullable=False)
+    content_md = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    chat_session = relationship("ChatSessionRecord", back_populates="reports")
+    user = relationship("UserRecord", back_populates="reports")
+
+    def __repr__(self):
+        return f"<Report(id={self.report_id}, drug={self.drug_name})>"
+
+
+class ToolMetricRecord(Base):
+    """Persistent tool call metrics (per tool-agent pair)."""
+    __tablename__ = "tool_metrics"
+
+    metric_id = Column(Integer, primary_key=True, autoincrement=True)
+    tool_name = Column(String(200), nullable=False, index=True)
+    agent_name = Column(String(100), nullable=False, index=True)
+    mcp_server = Column(String(100), nullable=True)
+    call_count = Column(Integer, default=0, nullable=False)
+    success_count = Column(Integer, default=0, nullable=False)
+    failure_count = Column(Integer, default=0, nullable=False)
+    total_execution_time_ms = Column(Float, default=0.0, nullable=False)
+    last_called_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tool_name", "agent_name", name="uq_tool_agent"),
+    )
+
+    def __repr__(self):
+        return f"<ToolMetric(tool={self.tool_name}, agent={self.agent_name}, calls={self.call_count})>"
+
+
+class ChatEmbeddingRecord(Base):
+    """Vector embeddings for chat messages (enables semantic search over chat history)."""
+    __tablename__ = "chat_embeddings"
+
+    embedding_id = Column(String(100), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    chat_session_id = Column(String(100), nullable=False, index=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    content_text = Column(Text, nullable=False)
+    # Vector(384) for PostgreSQL + pgvector, Text (JSON) for SQLite fallback
+    embedding = Column(_PGVector(384) if _PGVECTOR_AVAILABLE else Text, nullable=True)
+    timestamp = Column(DateTime, default=datetime.now, nullable=False)
+
+    def __repr__(self):
+        return f"<ChatEmbedding(id={self.embedding_id}, session={self.chat_session_id})>"

@@ -14,8 +14,8 @@ from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 class ClinicalAgent(BaseAgent):
     """Clinical trials and regulatory specialist agent."""
 
-    def __init__(self, mcp_orchestrator, llm=None):
-        super().__init__("ClinicalAgent", mcp_orchestrator, llm)
+    def __init__(self, mcp_orchestrator, llm=None, tool_tracker=None):
+        super().__init__("ClinicalAgent", mcp_orchestrator, llm, tool_tracker=tool_tracker)
 
     def _define_capabilities(self) -> List[str]:
         return [
@@ -28,7 +28,7 @@ class ClinicalAgent(BaseAgent):
         ]
 
     def _define_preferred_mcps(self) -> List[str]:
-        return ["biomcp", "opentargets"]
+        return ["biomcp", "opentargets", "biocontext"]
 
     def _define_keywords(self) -> List[str]:
         return [
@@ -58,14 +58,17 @@ class ClinicalAgent(BaseAgent):
                 "user_id": context.user_id,
             }
 
+            indication = task.parameters.get("indication", drug_name)
+
             # Phase 1: Gather real data in parallel
+            # trial_searcher removed — consistently returns 403 from the upstream
+            # ClinicalTrials.gov API via BioMCP; bc_search_studies (Phase 2) covers
+            # the same data via BioContext and is working reliably.
             parallel_calls = [
-                ("trial_searcher", {"interventions": drug_name}),
                 ("openfda_adverse_searcher", {"drug": drug_name}),
-                ("openfda_approval_searcher", {"drug": drug_name}),
-                ("openfda_label_searcher", {"drug": drug_name}),
-                ("nci_intervention_searcher", {"query": drug_name}),
-                ("disease_getter", {"disease": task.parameters.get("indication", drug_name)}),
+                ("openfda_approval_searcher",{"drug": drug_name}),
+                ("openfda_label_searcher",   {"drug": drug_name}),
+                ("disease_getter",           {"disease_id_or_name": indication}),
             ]
             results = await self._call_mcp_tools_parallel(parallel_calls, ctx)
 
@@ -74,10 +77,20 @@ class ClinicalAgent(BaseAgent):
                 if ok and data:
                     mcp_data[tool_names[i]] = data
                     actual_tools.append(tool_names[i])
-                    actual_mcps.append("biomcp")
+                    if "biomcp" not in actual_mcps:
+                        actual_mcps.append("biomcp")
 
-            # Deduplicate
-            actual_mcps = list(set(actual_mcps))
+            # Phase 2: BioContext clinical trials enrichment
+            biocontext_calls = [
+                ("bc_search_studies", {"query": drug_name}),
+            ]
+            bc_results = await self._call_mcp_tools_parallel(biocontext_calls, ctx)
+            for i, (data, ok) in enumerate(bc_results):
+                if ok and data:
+                    mcp_data[biocontext_calls[i][0]] = data
+                    actual_tools.append(biocontext_calls[i][0])
+                    if "biocontext" not in actual_mcps:
+                        actual_mcps.append("biocontext")
 
             # Phase 2: Synthesize with LLM
             if mcp_data:
