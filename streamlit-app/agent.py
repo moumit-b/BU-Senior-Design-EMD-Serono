@@ -14,16 +14,23 @@ from config import AGENT_MAX_ITERATIONS, AGENT_VERBOSE
 class MCPAgent:
     """Simple agent that uses configurable LLM and MCP tools."""
 
-    def __init__(self, tools: List[Tool], config_data: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        tools: List[Tool],
+        config_data: Optional[Dict[str, Any]] = None,
+        tool_tracker=None,
+    ):
         """
         Initialize the MCP agent.
 
         Args:
             tools: List of LangChain tools (from MCP servers)
             config_data: Configuration data from ConfigurationManager
+            tool_tracker: Optional ToolMetricsTracker for persistent metrics
         """
         self.tools = tools
         self.config_data = config_data
+        self.tool_tracker = tool_tracker
         self.llm = None
         self.tools_dict = {tool.name: tool for tool in tools}
 
@@ -207,9 +214,23 @@ Begin by selecting an appropriate tool from the available list:"""
                         if action_name in self.tools_dict:
                             tool = self.tools_dict[action_name]
                             try:
+                                import time as _time
+                                _t0 = _time.time()
                                 observation = tool.func(json.dumps(action_input))
+                                _elapsed_ms = (_time.time() - _t0) * 1000
+                                _success = not str(observation).startswith("Error")
                             except Exception as e:
                                 observation = f"Error executing tool: {str(e)}"
+                                _elapsed_ms = 0.0
+                                _success = False
+                            # Record in persistent metrics
+                            if self.tool_tracker is not None:
+                                try:
+                                    self.tool_tracker.record_call(
+                                        action_name, "MCPAgent", "direct", _success, _elapsed_ms
+                                    )
+                                except Exception:
+                                    pass
 
                             intermediate_steps.append((
                                 type('Action', (), {

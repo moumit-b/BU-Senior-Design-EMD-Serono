@@ -1,8 +1,10 @@
 """
-SQLite Database Manager
+Database Manager
 
-Provides connection pooling, session management, and schema initialization
-for the persistent context layer.
+Supports both PostgreSQL (Supabase — shared across machines) and SQLite
+(local fallback when SUPABASE_DB_URL is not set).
+
+Set SUPABASE_DB_URL in .env to enable cross-machine persistence.
 """
 
 import os
@@ -10,94 +12,81 @@ from pathlib import Path
 from typing import Optional
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, event, Engine
+from sqlalchemy import create_engine, event, Engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import StaticPool
 
 from .db_models import Base
 
 
 class DatabaseManager:
     """
-    SQLite database manager for persistent context storage.
+    Database manager supporting PostgreSQL (Supabase) and SQLite.
 
-    Features:
-    - Connection pooling
-    - Schema auto-creation
-    - Context manager support
-    - Thread-safe operations
+    When SUPABASE_DB_URL is set: uses PostgreSQL for cross-machine access.
+    Otherwise: falls back to local SQLite for development.
     """
 
     def __init__(self, db_path: str = "data/sessions.db"):
-        """
-        Initialize database manager.
-
-        Args:
-            db_path: Path to SQLite database file
-        """
-        self.db_path = db_path
+        self._db_path = db_path
+        self._database_url: Optional[str] = os.getenv("SUPABASE_DB_URL")
+        self._using_postgres: bool = bool(self._database_url)
         self._engine: Optional[Engine] = None
         self._session_maker: Optional[sessionmaker] = None
-        self._ensure_data_directory()
 
-    def _ensure_data_directory(self):
-        """Create data directory if it doesn't exist."""
-        data_dir = Path(self.db_path).parent
-        data_dir.mkdir(parents=True, exist_ok=True)
+        if not self._using_postgres:
+            # Ensure local data directory exists for SQLite fallback
+            data_dir = Path(db_path).parent
+            data_dir.mkdir(parents=True, exist_ok=True)
 
     def _configure_sqlite(self, dbapi_conn, connection_record):
         """Configure SQLite connection for optimal performance."""
-        # Enable foreign keys
         dbapi_conn.execute("PRAGMA foreign_keys = ON")
-        # Use WAL mode for better concurrency
         dbapi_conn.execute("PRAGMA journal_mode = WAL")
-        # Increase cache size (10MB)
         dbapi_conn.execute("PRAGMA cache_size = -10000")
-        # Synchronous mode for better performance
         dbapi_conn.execute("PRAGMA synchronous = NORMAL")
 
     def initialize(self) -> None:
-        """
-        Initialize database connection and create schema.
-
-        Creates tables if they don't exist.
-        """
+        """Initialize database connection and create schema."""
         if self._engine is not None:
             return
 
-        # Create engine with connection pooling
-        self._engine = create_engine(
-            f"sqlite:///{self.db_path}",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,  # Use static pool for SQLite
-            echo=False,  # Set to True for SQL debugging
-        )
+        if self._using_postgres:
+            self._engine = create_engine(
+                self._database_url,
+                pool_pre_ping=True,
+                pool_recycle=300,
+                pool_size=5,
+                max_overflow=10,
+                echo=False,
+            )
+            # Enable pgvector extension if available
+            try:
+                with self._engine.connect() as conn:
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    conn.commit()
+            except Exception:
+                pass  # pgvector may already exist or not be available
+        else:
+            from sqlalchemy.pool import StaticPool
+            self._engine = create_engine(
+                f"sqlite:///{self._db_path}",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+                echo=False,
+            )
+            event.listen(self._engine, "connect", self._configure_sqlite)
 
-        # Configure SQLite for optimal performance
-        event.listen(self._engine, "connect", self._configure_sqlite)
-
-        # Create session maker
         self._session_maker = sessionmaker(
             bind=self._engine,
             autocommit=False,
             autoflush=False,
         )
 
-        # Create tables
         Base.metadata.create_all(self._engine)
 
     @contextmanager
     def get_session(self) -> Session:
-        """
-        Get database session with automatic cleanup.
-
-        Usage:
-            with db_manager.get_session() as session:
-                session.query(SessionRecord).all()
-
-        Yields:
-            SQLAlchemy session
-        """
+        """Get a database session with automatic commit/rollback."""
         if self._session_maker is None:
             self.initialize()
 
@@ -105,7 +94,7 @@ class DatabaseManager:
         try:
             yield session
             session.commit()
-        except Exception as e:
+        except Exception:
             session.rollback()
             raise
         finally:
@@ -119,25 +108,22 @@ class DatabaseManager:
             self._session_maker = None
 
     def reset_database(self) -> None:
-        """
-        Drop all tables and recreate schema.
-
-        WARNING: This deletes all data! Use only for testing.
-        """
+        """Drop all tables and recreate schema. WARNING: deletes all data."""
         if self._engine is not None:
             Base.metadata.drop_all(self._engine)
             Base.metadata.create_all(self._engine)
 
     @property
     def is_initialized(self) -> bool:
-        """Check if database is initialized."""
         return self._engine is not None
 
+    @property
+    def backend(self) -> str:
+        return "postgresql" if self._using_postgres else "sqlite"
+
     def __enter__(self):
-        """Context manager entry."""
         self.initialize()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
         self.close()

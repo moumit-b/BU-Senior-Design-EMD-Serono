@@ -14,8 +14,8 @@ from .base_agent import BaseAgent, AgentTask, AgentResult, AgentContext
 class ClinicalAgent(BaseAgent):
     """Clinical trials and regulatory specialist agent."""
 
-    def __init__(self, mcp_orchestrator, llm=None):
-        super().__init__("ClinicalAgent", mcp_orchestrator, llm)
+    def __init__(self, mcp_orchestrator, llm=None, tool_tracker=None):
+        super().__init__("ClinicalAgent", mcp_orchestrator, llm, tool_tracker=tool_tracker)
 
     def _define_capabilities(self) -> List[str]:
         return [

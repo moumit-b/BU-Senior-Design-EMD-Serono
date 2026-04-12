@@ -72,7 +72,7 @@ class BaseAgent(ABC):
     and knows which MCP servers and tools are best for its domain.
     """
 
-    def __init__(self, agent_name: str, mcp_orchestrator, llm=None):
+    def __init__(self, agent_name: str, mcp_orchestrator, llm=None, tool_tracker=None):
         """
         Initialize base agent.
 
@@ -80,9 +80,11 @@ class BaseAgent(ABC):
             agent_name: Name of the agent
             mcp_orchestrator: MCP orchestrator instance
             llm: Language model instance (optional, will use factory if not provided)
+            tool_tracker: Optional ToolMetricsTracker for persistent call metrics
         """
         self.agent_name = agent_name
         self.mcp_orchestrator = mcp_orchestrator
+        self.tool_tracker = tool_tracker
 
         # Initialize LLM using factory if not provided
         if llm is None:
@@ -265,9 +267,26 @@ class BaseAgent(ABC):
                 print(f"[{self.agent_name}] MCP OK {tool_name} ({feedback.latency_ms:.0f}ms)")
             else:
                 print(f"[{self.agent_name}] MCP FAIL {tool_name}: {feedback.recommendation}")
+            # Record in persistent metrics
+            if self.tool_tracker is not None:
+                try:
+                    self.tool_tracker.record_call(
+                        tool_name=tool_name,
+                        agent_name=self.agent_name,
+                        mcp_server=ctx.get("agent_id", "unknown"),
+                        success=feedback.success,
+                        execution_time_ms=feedback.latency_ms,
+                    )
+                except Exception:
+                    pass
             return result, feedback.success
         except asyncio.TimeoutError:
             print(f"[{self.agent_name}] MCP TIMEOUT {tool_name} (>{timeout}s)")
+            if self.tool_tracker is not None:
+                try:
+                    self.tool_tracker.record_call(tool_name, self.agent_name, "unknown", False, timeout * 1000)
+                except Exception:
+                    pass
             return None, False
         except Exception as e:
             print(f"[{self.agent_name}] MCP ERROR {tool_name}: {type(e).__name__}: {e}")
