@@ -1,143 +1,125 @@
-# BU-Senior-Design-EMD-Serono
----
+# Pharma Research Intelligence System
+### MCP-Based Multi-Agent AI for Drug Development Competitive Intelligence
 
-# MCP-Based Multi-Agent AI System for Drug Development Intelligence
+> **New to this repo? Start with [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md).**
+
+---
 
 ## Overview
 
-This project aims to develop a **Model Context Protocol (MCP)**–enabled multi-agent AI system designed to **gather, normalize, and summarize drug development information** across diverse biomedical data sources. The system is built for **EMD Serono’s Competitive Intelligence (CI)** workflows to accelerate evidence-based decision-making and improve visibility across all four clinical trial phases.
+A **Model Context Protocol (MCP)**–powered multi-agent AI system that gathers, normalizes, and synthesizes drug development intelligence across biomedical data sources. Built for EMD Serono's Competitive Intelligence (CI) workflows to accelerate evidence-based decision-making across all clinical trial phases.
+
+The system combines a real-time research chat interface with a structured 18-section report generator, backed by 9 specialized MCP data servers, persistent multi-session chat history (Supabase), and a governance/audit layer.
 
 ---
 
-## Objectives
+## Features
 
-* **Aggregate and standardize** data from literature, patents, chemical databases, regulatory filings, and scientific news.
-* **Leverage multi-agent collaboration** for automated retrieval, synthesis, and summarization of drug development information.
-* **Integrate MCP servers** to enable interoperability between models, data pipelines, and tool providers.
-* **Develop an observability layer** that ensures auditability, transparency, and compliance in all agent actions.
+- **Conversational research chat** with full context history — follow-up questions understand prior turns
+- **18-section CI report generation** via parallel multi-agent MCP orchestration
+- **Persistent sessions** — chat history and generated reports saved per user in Supabase
+- **Report downloads** — `.md` and `.pdf` formats
+- **Tool call metrics** — visualize which MCP tools were used per session
+- **Governance layer** — rate limiting, compliance checks, audit logging, PII detection
+- **Multi-LLM support** — Claude (default), Azure OpenAI, local Ollama models
 
 ---
 
 ## System Architecture
 
-### Chat Interface (Left Panel)
+### Chat Interface
 
-The primary interaction point. Users ask questions about drugs, targets, or therapeutic areas. Queries flow through the **MCPAgent**, which operates an agentic tool-calling loop:
+User questions flow through `MCPAgent`, which runs an agentic tool-calling loop with conversation history:
 
 ```
-User question -> MCPAgent -> LLM decides which MCP tool to call
-    -> Execute tool (PubChem, BioMCP, literature, etc.)
-    -> Feed result back to LLM -> Repeat up to 10 iterations
-    -> Final synthesized answer
+User message + conversation history
+    -> MCPAgent -> LLM selects MCP tool(s)
+    -> Execute tool (PubChem, BioMCP, OpenFDA, etc.)
+    -> Feed result back to LLM -> up to 10 iterations
+    -> FINAL ANSWER synthesized from real data
 ```
 
-All MCP tool calls are mediated through the **Context Forge Gateway** for governance, audit logging, compliance checks, and rate limiting.
+All tool calls pass through the **Context Forge Gateway** for governance, audit logging, compliance checks, and rate limiting.
 
-### Report Generation Panel (Right Panel) — Multi-Agent MCP Orchestration
+### Report Generation Panel
 
-A dedicated panel separated from the chat interface for generating structured pharmaceutical reports. The panel automatically detects the drug or target being discussed in the chat and allows the user to generate formal reports on demand.
+Automatically detects the drug/target being discussed, then generates a structured EMD-format CI report on demand:
 
-**How it works:**
+```
+ReportAgent (18 sections in parallel batches of 3)
+    |
+    For each section:
+        _gather_agent_data() — 1-3 specialized agents in parallel
+            ChemicalAgent  -> PubChem, OpenFDA label data
+            ClinicalAgent  -> ClinicalTrials.gov, FDA adverse events
+            LiteratureAgent-> PubMed, medRxiv, bioRxiv
+            GeneAgent      -> Open Targets, STRING-db, NCI biomarkers
+        _synthesize_section() — LLM writes section from real MCP data
+    |
+    _compile_report() -> 18-section markdown document
+    -> Saved to Supabase reports table
+    -> Available for .md or .pdf download
+```
 
-1. **Drug Detection** — The `drug_extractor` module analyzes conversation history using the LLM to identify the primary drug/compound/target being discussed. Results are cached and only re-extracted when new messages are added.
-
-2. **Report Type Selection** — Users select from available report types (currently Competitive Intelligence; extensible to Target CV, Clinical Summary, Biomarker Landscape, etc.).
-
-3. **Multi-Agent Report Generation** — Clicking "Generate Report" invokes the `ReportAgent`, which orchestrates a full multi-agent workflow:
-
-   ```
-   ReportAgent creates 5 specialized agents (shared MCPOrchestrator + LLM)
-       |
-       v
-   All 18 EMD sections dispatched IN PARALLEL (asyncio.gather)
-       |
-       |   For each section (e.g., Section 9: Competitive Landscape):
-       |       |
-       |       v
-       |   _gather_agent_data() — dispatches to 1-3 agents IN PARALLEL
-       |       |
-       |       +---> ClinicalAgent.process()
-       |       |         calls MCP tools: trial_searcher, openfda_adverse_searcher, etc.
-       |       +---> ChemicalAgent.process()
-       |       |         calls MCP tools: search_compounds_by_name, drug_getter, etc.
-       |       +---> LiteratureAgent.process()
-       |                 calls MCP tools: article_searcher, search_pubmed, etc.
-       |       |
-       |       v
-       |   _synthesize_section() — LLM writes section using real MCP data
-       |       + EMD template structure + agent expert analyses
-       |
-       v
-   _compile_report() — stitches 18 sections into final document
-   ```
-
-   Every specialized agent follows a **3-phase pattern**:
-   - **Phase 1 — Gather**: Call MCP tools in parallel via `_call_mcp_tools_parallel()`
-   - **Phase 2 — Synthesize**: Feed real MCP data into LLM for expert analysis
-   - **Phase 3 — Fallback**: If MCP tools fail, produce LLM-only output gracefully
-
-   All MCP tool calls flow through the **MCPOrchestrator** → **Context Forge Gateway** for governance.
-
-4. **Download** — Generated reports can be downloaded as `.md` files with descriptive filenames (e.g., `CI_Report_Pembrolizumab_2026-04-07.md`).
-
-**Report format reference:** The EMD report structure covers 18 sections including Executive Summary & 6R Framework, Target/Biomarker Information, Molecular Pathways, Competitive Landscape, Regulatory/Commercial Overview, Development Trends, Risks & Recommendations, and more. See [`streamlit-app/docs/EMD_report_format.md`](streamlit-app/docs/EMD_report_format.md) for the full template.
+See [`streamlit-app/docs/EMD_report_format.md`](streamlit-app/docs/EMD_report_format.md) for the full 18-section template.
 
 ### Specialized Agents
 
-All agents extend `BaseAgent` and call **real MCP tools** via the MCPOrchestrator:
+| Agent | Domain | Key MCP Tools |
+|-------|--------|---------------|
+| **ChemicalAgent** | Compounds, ADMET, drug safety | `search_compounds_by_name`, `drug_getter`, `openfda_label_searcher` |
+| **ClinicalAgent** | Trials, FDA data, regulatory | `trial_searcher`, `openfda_adverse_searcher`, `nci_intervention_searcher` |
+| **LiteratureAgent** | Publications, preprints | `article_searcher`, `search_pubmed`, `search_medrxiv_preprints` |
+| **GeneAgent** | Genes, targets, pathways | `gene_getter`, `search_opentargets`, `get_protein_interactions` |
+| **ReportAgent** | CI report orchestration | Delegates to all agents above |
 
-| Agent | Domain | MCP Tools Used |
-|-------|--------|----------------|
-| **ChemicalAgent** | Compounds, molecular properties, drug safety | `search_compounds_by_name`, `drug_getter`, `openfda_label_searcher` |
-| **ClinicalAgent** | Clinical trials, FDA data, regulatory | `trial_searcher`, `openfda_adverse_searcher`, `openfda_approval_searcher`, `openfda_label_searcher`, `nci_intervention_searcher`, `disease_getter` |
-| **LiteratureAgent** | Publications, preprints, citations | `article_searcher`, `search_pubmed`, `search_medrxiv_preprints`, `search_biorxiv_preprints` |
-| **GeneAgent** | Genes, variants, protein interactions, biomarkers | `gene_getter`, `search_opentargets`, `get_protein_interactions`, `nci_biomarker_searcher`, `variant_searcher` |
-| **DataAgent** | Statistical analysis, data visualization | LLM-only (jupyter/duckdb MCPs not in main config) |
-| **ReportAgent** | EMD-format report orchestration | Delegates to all agents above |
-
-### MCP Servers
+### MCP Servers (9 total)
 
 | Server | Data Source |
 |--------|------------|
-| `pubchem` | Chemical compound data (PubChem) |
-| `biomcp` | Comprehensive biomedical research (PubMed, clinical trials, variants, genes) |
-| `literature` | PubMed articles, abstracts, citations |
-| `data_analysis` | Statistics, correlations, sequence analysis, molecular descriptors |
-| `web_knowledge` | Wikipedia, clinical trials, gene info, drug information |
-| `medrxiv` | Medical preprint search and metadata |
-| `opentargets` | Target-disease associations and drug data |
+| `pubchem-augmented` | PubChem — chemical structures and properties |
+| `biomcp` | PubMed, ClinicalTrials.gov, OpenFDA, variants, genes |
+| `literature` | PubMed articles and abstracts |
+| `data_analysis` | Statistics, molecular descriptors |
+| `web_knowledge` | Wikipedia, DrugBank, drug/gene info |
+| `medrxiv` | Medical preprint search |
+| `biorxiv` | Biology preprint search |
+| `opentargets` | Target-disease associations |
 | `stringdb` | Protein-protein interaction networks |
-| `biorxiv` | Biology preprint search and metadata |
 
-### Governance Layer (Context Forge Gateway)
+### Database (Supabase / SQLite fallback)
 
-All MCP tool calls are routed through the Context Forge Gateway which provides:
-- **Rate limiting** — Per-user limits (configurable, default 100 calls/hour)
-- **Compliance checks** — PII/PHI detection, prohibited term filtering
-- **Audit logging** — Immutable request/response records (SQLite-backed)
-- **Service health monitoring** — Heartbeat checks and failover
-- **Source attribution** — Data lineage tracking
+- `users` — account records
+- `chat_sessions` — one row per conversation, scoped to user
+- `messages` — full message history with tool call steps
+- `reports` — generated CI reports, scoped to session + user
 
-### LLM Configuration
+Local fallback uses `streamlit-app/data/sessions.db` (SQLite) when no `SUPABASE_DB_URL` is set.
 
-The system supports multiple LLM providers, selectable at runtime:
-- **Standard** — Anthropic Claude Sonnet (default)
-- **Merck Enterprise** — Azure OpenAI / AWS Bedrock
-- **Ollama** — Local LLM (qwen3, llama3, deepseek, etc.)
+---
 
-The report generation panel respects whichever provider the user has selected.
+## LLM Configuration
+
+| Profile | Provider | Use case |
+|---------|----------|----------|
+| Standard | Anthropic Claude Sonnet | Default — get key at console.anthropic.com |
+| Merck Enterprise | Azure OpenAI / AWS Bedrock | Corporate network |
+| Local | Ollama (qwen3, llama3, etc.) | Offline / no API key |
 
 ---
 
 ## Documentation
-* **[Merck Startup Guide](MERCK_STARTUP_GUIDE.md)** – **Recommended for EMD Serono/Merck users.**
-* **[Installation Guide](docs/INSTALLATION.md)** – General setup instructions.
-* **[Fix Log](docs/claude_fix_log.md)** – Detailed history of recent system fixes.
-* **[EMD Report Format](streamlit-app/docs/EMD_report_format.md)** – The 18-section report structure template.
+
+| Document | Purpose |
+|----------|---------|
+| **[SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md)** | Full setup guide — start here |
+| **[MERCK_STARTUP_GUIDE.md](MERCK_STARTUP_GUIDE.md)** | EMD Serono / Merck-specific setup (SSL, proxy) |
+| **[docs/INSTALLATION.md](docs/INSTALLATION.md)** | Legacy dual-orchestration install reference |
+| **[streamlit-app/docs/EMD_report_format.md](streamlit-app/docs/EMD_report_format.md)** | 18-section report template |
 
 ---
 
 ## Contributors
-* **Rohan Hegde**, **Akash Prabu**, **Moumit Bhattacharjee**, **Takumi Tomono** – Project Collaborators
-* **Dr. Parantu Shah** – Mentor
 
+**Rohan Hegde**, **Akash Prabu**, **Moumit Bhattacharjee**, **Takumi Tomono** — Project Collaborators  
+**Dr. Parantu Shah** — Mentor
