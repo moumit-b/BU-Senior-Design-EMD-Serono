@@ -30,6 +30,8 @@ def render_report_panel(agent, db_manager=None, vector_store=None) -> None:
     messages = st.session_state.get("messages", [])
     drug_name = _get_identified_drug(messages, agent)
 
+    chat_session_id = st.session_state.get("current_chat_session_id")
+
     if drug_name is None:
         st.info(
             "**No subject identified.**\n\n"
@@ -37,7 +39,7 @@ def render_report_panel(agent, db_manager=None, vector_store=None) -> None:
             "and the system will detect it automatically."
         )
         st.markdown("### Past Reports")
-        _render_past_reports(db_manager)
+        _render_past_reports(db_manager, chat_session_id=chat_session_id)
         return
 
     st.success(f"**Research subject:** {drug_name}")
@@ -59,7 +61,7 @@ def render_report_panel(agent, db_manager=None, vector_store=None) -> None:
         _display_report(st.session_state.generated_report, drug_name)
 
     st.divider()
-    _render_past_reports(db_manager, drug_name=drug_name)
+    _render_past_reports(db_manager, chat_session_id=chat_session_id, drug_name=drug_name)
     _render_dev_log()
 
 
@@ -351,7 +353,7 @@ def _display_report(report_md: str, drug_name: str) -> None:
         st.markdown(report_md)
 
 
-def _render_past_reports(db_manager, drug_name: Optional[str] = None) -> None:
+def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug_name: Optional[str] = None) -> None:
     """Show a list of previously generated reports from the database."""
     if db_manager is None:
         return
@@ -359,11 +361,15 @@ def _render_past_reports(db_manager, drug_name: Optional[str] = None) -> None:
         from context.db_models import ReportRecord
         from reporting.exporters.pdf_exporter import PDFExporter
         with db_manager.get_session() as session:
-            q = session.query(ReportRecord).order_by(ReportRecord.created_at.desc()).limit(20)
+            base = session.query(ReportRecord)
+            if chat_session_id:
+                base = base.filter(ReportRecord.chat_session_id == chat_session_id)
             if drug_name:
-                q = session.query(ReportRecord).filter(
+                q = base.filter(
                     ReportRecord.drug_name.ilike(f"%{drug_name}%")
                 ).order_by(ReportRecord.created_at.desc()).limit(10)
+            else:
+                q = base.order_by(ReportRecord.created_at.desc()).limit(20)
             # Materialize into plain dicts before session closes to avoid DetachedInstanceError
             records = [
                 {
