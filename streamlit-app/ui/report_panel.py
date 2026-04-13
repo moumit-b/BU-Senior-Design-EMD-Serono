@@ -183,6 +183,7 @@ def _generate_and_display_report(
 ) -> None:
     """Instantiate the ReportAgent and generate the report."""
     st.session_state["report_dev_log"] = []
+    st.session_state.pop("hallucination_check", None)
 
     def log(msg: str):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -322,7 +323,7 @@ def _display_report(report_md: str, drug_name: str) -> None:
     safe_name = drug_name.replace(" ", "_").replace("/", "-")
     today = datetime.date.today().isoformat()
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.download_button(
             label="Download (.md)",
@@ -344,13 +345,50 @@ def _display_report(report_md: str, drug_name: str) -> None:
         except Exception as e:
             st.caption(f"PDF unavailable: {e}")
     with col3:
+        if st.button("Verify Identifiers", use_container_width=True):
+            with st.spinner("Verifying NCT numbers, PMIDs, and DOIs…"):
+                from ml.hallucination_checker import verify_report as _verify
+                st.session_state["hallucination_check"] = _verify(report_md)
+            st.rerun()
+    with col4:
         if st.button("Clear Report", use_container_width=True):
             st.session_state.generated_report = None
             st.session_state.pop("report_dev_log", None)
+            st.session_state.pop("hallucination_check", None)
             st.rerun()
+
+    _render_verification_results()
 
     with st.container(height=600):
         st.markdown(report_md)
+
+
+def _render_verification_results() -> None:
+    """Display identifier verification results below the report action buttons."""
+    results = st.session_state.get("hallucination_check")
+    if results is None:
+        return
+
+    if not results:
+        st.info("No verifiable identifiers (NCT numbers, PMIDs, DOIs) found in this report.")
+        return
+
+    valid   = {k: v for k, v in results.items() if v["valid"]}
+    invalid = {k: v for k, v in results.items() if not v["valid"]}
+
+    label = (
+        f"Identifier Verification — "
+        f"{len(valid)} verified ✓  |  {len(invalid)} failed ✗"
+    )
+    with st.expander(label, expanded=len(invalid) > 0):
+        if invalid:
+            st.error(f"{len(invalid)} identifier(s) could not be verified — possible hallucination:")
+            for id_val, r in invalid.items():
+                st.markdown(f"- `{id_val}` ({r['type'].upper()}) — {r['details']}")
+        if valid:
+            st.success(f"{len(valid)} identifier(s) confirmed real:")
+            for id_val, r in valid.items():
+                st.markdown(f"- `{id_val}` ({r['type'].upper()}) — {r['details']}")
 
 
 def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug_name: Optional[str] = None) -> None:
