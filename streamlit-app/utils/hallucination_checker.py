@@ -1,5 +1,5 @@
 """
-Hallucination Checker (Approach 1 — Identifier Verification)
+Identifier Verification
 
 Extracts structured identifiers from report markdown and verifies each one
 against its authoritative public API using parallel HTTP requests.

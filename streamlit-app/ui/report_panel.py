@@ -347,7 +347,7 @@ def _display_report(report_md: str, drug_name: str) -> None:
     with col3:
         if st.button("Verify Identifiers", use_container_width=True):
             with st.spinner("Verifying NCT numbers, PMIDs, and DOIs…"):
-                from ml.hallucination_checker import verify_report as _verify
+                from utils.hallucination_checker import verify_report as _verify
                 st.session_state["hallucination_check"] = _verify(report_md)
             st.rerun()
     with col4:
