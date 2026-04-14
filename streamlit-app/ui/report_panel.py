@@ -456,7 +456,10 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                 vrows = session.query(ReportVerificationRecord).filter(
                     ReportVerificationRecord.report_id.in_(report_ids)
                 ).all()
-                verifications = {v.report_id: v.hallucination_rate for v in vrows}
+                verifications = {
+                    v.report_id: {"rate": v.hallucination_rate, "details": v.details_json}
+                    for v in vrows
+                }
 
             records = [
                 {
@@ -465,7 +468,8 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                     "report_type": r.report_type,
                     "content_md": r.content_md,
                     "created_at": r.created_at,
-                    "hallucination_rate": verifications.get(r.report_id),
+                    "hallucination_rate": verifications.get(r.report_id, {}).get("rate"),
+                    "verification_details": verifications.get(r.report_id, {}).get("details"),
                 }
                 for r in report_rows
             ]
@@ -493,6 +497,8 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                     if st.button("View", key=f"view_{r['report_id']}"):
                         st.session_state.generated_report = r["content_md"]
                         st.session_state.identified_drug = r["drug_name"]
+                        st.session_state["hallucination_rate"] = r["hallucination_rate"]
+                        st.session_state["hallucination_check"] = r["verification_details"]
                         st.rerun()
                 with col_md:
                     safe = r["drug_name"].replace(" ", "_")
