@@ -274,10 +274,11 @@ def _generate_and_display_report(
             log(f"Report generated in {elapsed:.1f}s")
             log(f"MCPs used: {result.mcps_used}")
 
-            # Save report to database
+            # Save report to database then auto-verify identifiers
             if db_manager and report_md:
-                _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, report_md)
+                report_id = _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, report_md)
                 log("Report saved to database")
+                _run_and_save_verification(db_manager, report_id, report_md, log)
         elif result:
             st.session_state.generated_report = (
                 f"# Report Generation Failed\n\n**Error:** {result.error_message}\n\n"
@@ -295,8 +296,8 @@ def _generate_and_display_report(
     st.rerun()
 
 
-def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, content_md):
-    """Save the generated report to the reports table."""
+def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, content_md) -> Optional[str]:
+    """Save the generated report to the reports table. Returns report_id or None."""
     try:
         from context.db_models import ReportRecord
         with db_manager.get_session() as session:
@@ -309,8 +310,42 @@ def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_t
                 created_at=datetime.datetime.now(),
             )
             session.add(record)
+            return record.report_id
     except Exception as e:
         logger.warning(f"_save_report_to_db error: {e}")
+        return None
+
+
+def _run_and_save_verification(db_manager, report_id: str, report_md: str, log) -> None:
+    """Run identifier verification and persist results to report_verifications."""
+    try:
+        from utils.hallucination_checker import verify_report
+        from context.db_models import ReportVerificationRecord
+
+        log("Running identifier verification…")
+        results = verify_report(report_md)
+
+        total = len(results)
+        verified = sum(1 for r in results.values() if r["valid"])
+        unverified = total - verified
+        rate = round(unverified / total, 3) if total > 0 else 0.0
+
+        st.session_state["hallucination_check"] = results
+        st.session_state["hallucination_rate"] = rate
+
+        if db_manager and report_id:
+            with db_manager.get_session() as session:
+                session.add(ReportVerificationRecord(
+                    report_id=report_id,
+                    total_identifiers=total,
+                    verified_count=verified,
+                    unverified_count=unverified,
+                    hallucination_rate=rate,
+                    details_json=results,
+                ))
+        log(f"Verification: {verified}/{total} identifiers valid (hallucination rate {rate:.0%})")
+    except Exception as e:
+        log(f"Verification failed (non-fatal): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +392,15 @@ def _display_report(report_md: str, drug_name: str) -> None:
             st.session_state.pop("hallucination_check", None)
             st.rerun()
 
+    rate = st.session_state.get("hallucination_rate")
+    if rate is not None:
+        if rate == 0.0:
+            st.success(f"Hallucination rate: 0% — all identifiers verified", icon="✅")
+        elif rate < 0.3:
+            st.warning(f"Hallucination rate: {rate:.0%} — some identifiers unverified", icon="⚠️")
+        else:
+            st.error(f"Hallucination rate: {rate:.0%} — high, expert review recommended", icon="🚨")
+
     _render_verification_results()
 
     with st.container(height=600):
@@ -396,7 +440,7 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
     if db_manager is None:
         return
     try:
-        from context.db_models import ReportRecord
+        from context.db_models import ReportRecord, ReportVerificationRecord
         from reporting.exporters.pdf_exporter import PDFExporter
         with db_manager.get_session() as session:
             base = session.query(ReportRecord)
@@ -408,7 +452,17 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                 ).order_by(ReportRecord.created_at.desc()).limit(10)
             else:
                 q = base.order_by(ReportRecord.created_at.desc()).limit(20)
-            # Materialize into plain dicts before session closes to avoid DetachedInstanceError
+            report_rows = q.all()
+
+            # Fetch verification rates for these reports in one query
+            report_ids = [r.report_id for r in report_rows]
+            verifications = {}
+            if report_ids:
+                vrows = session.query(ReportVerificationRecord).filter(
+                    ReportVerificationRecord.report_id.in_(report_ids)
+                ).all()
+                verifications = {v.report_id: v.hallucination_rate for v in vrows}
+
             records = [
                 {
                     "report_id": r.report_id,
@@ -416,8 +470,9 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                     "report_type": r.report_type,
                     "content_md": r.content_md,
                     "created_at": r.created_at,
+                    "hallucination_rate": verifications.get(r.report_id),
                 }
-                for r in q.all()
+                for r in report_rows
             ]
 
         if not records:
@@ -427,9 +482,18 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
         with st.expander(label, expanded=True):
             for r in records:
                 date_str = r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else "unknown"
+                rate = r["hallucination_rate"]
+                if rate is None:
+                    rate_badge = "· ⬜ unverified"
+                elif rate == 0.0:
+                    rate_badge = "· ✅ 0% hallucination"
+                elif rate < 0.3:
+                    rate_badge = f"· ⚠️ {rate:.0%} hallucination"
+                else:
+                    rate_badge = f"· 🚨 {rate:.0%} hallucination"
                 col_info, col_view, col_md, col_pdf = st.columns([3, 1, 1, 1])
                 with col_info:
-                    st.markdown(f"**{r['drug_name']}** · {REPORT_TYPES.get(r['report_type'], r['report_type'])} · {date_str}")
+                    st.markdown(f"**{r['drug_name']}** · {REPORT_TYPES.get(r['report_type'], r['report_type'])} · {date_str} {rate_badge}")
                 with col_view:
                     if st.button("View", key=f"view_{r['report_id']}"):
                         st.session_state.generated_report = r["content_md"]

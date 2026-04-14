@@ -330,6 +330,23 @@ class ReportRecord(Base):
         return f"<Report(id={self.report_id}, drug={self.drug_name})>"
 
 
+class ReportVerificationRecord(Base):
+    """Hallucination check results linked to a generated report."""
+    __tablename__ = "report_verifications"
+
+    verification_id = Column(String(100), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    report_id = Column(String(100), ForeignKey("reports.report_id"), nullable=False, index=True, unique=True)
+    total_identifiers = Column(Integer, default=0, nullable=False)
+    verified_count = Column(Integer, default=0, nullable=False)
+    unverified_count = Column(Integer, default=0, nullable=False)
+    hallucination_rate = Column(Float, default=0.0, nullable=False)  # unverified / total
+    details_json = Column(JSON, nullable=True)  # full verify_report() output
+    verified_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    def __repr__(self):
+        return f"<ReportVerification(report={self.report_id}, rate={self.hallucination_rate:.0%})>"
+
+
 class ToolMetricRecord(Base):
     """Persistent tool call metrics (per tool-agent pair)."""
     __tablename__ = "tool_metrics"
