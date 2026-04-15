@@ -41,21 +41,46 @@ def extract_identifiers(report_md: str) -> Dict[str, List[str]]:
 # Per-type verifiers
 # ---------------------------------------------------------------------------
 
-def _verify_nct(nct_id: str) -> Tuple[bool, str]:
+def _check_drug_in_trial(data: dict, drug_name: str) -> bool:
+    """Return True if drug_name appears in the trial title or interventions."""
+    protocol = data.get("protocolSection", {})
+    title = protocol.get("identificationModule", {}).get("briefTitle", "")
+    interventions = [
+        i.get("name", "")
+        for i in protocol.get("armsInterventionsModule", {}).get("interventions", [])
+    ]
+    all_text = (title + " " + " ".join(interventions)).lower()
+    drug_lower = drug_name.lower()
+    if drug_lower in all_text:
+        return True
+    # Also check individual words (skip short words to avoid false matches)
+    words = [w for w in drug_lower.split() if len(w) > 3]
+    return any(w in all_text for w in words) if words else False
+
+
+def _verify_nct(nct_id: str, drug_name: str = None) -> Tuple:
+    """Verify NCT number. Returns (valid, details, drug_match) where drug_match
+    is True/False if drug_name provided, None otherwise."""
     url = f"https://clinicaltrials.gov/api/v2/studies/{nct_id}"
     try:
         with urlopen(Request(url, headers={"Accept": "application/json"}), timeout=REQUEST_TIMEOUT) as resp:
             if resp.status == 200:
-                return True, "verified on ClinicalTrials.gov"
+                if drug_name:
+                    data = json.loads(resp.read())
+                    drug_match = _check_drug_in_trial(data, drug_name)
+                    if drug_match:
+                        return True, "verified on ClinicalTrials.gov", True
+                    return True, "verified — drug not found in this trial", False
+                return True, "verified on ClinicalTrials.gov", None
     except HTTPError as e:
         if e.code == 404:
-            return False, "not found on ClinicalTrials.gov"
-        return False, f"HTTP {e.code}"
+            return False, "not found on ClinicalTrials.gov", None
+        return False, f"HTTP {e.code}", None
     except URLError as e:
-        return False, f"network error: {e.reason}"
+        return False, f"network error: {e.reason}", None
     except Exception as e:
-        return False, f"error: {e}"
-    return False, "unexpected response"
+        return False, f"error: {e}", None
+    return False, "unexpected response", None
 
 
 def _verify_pmid(pmid: str) -> Tuple[bool, str]:
@@ -103,13 +128,19 @@ _VERIFIERS = {"nct": _verify_nct, "pmid": _verify_pmid, "doi": _verify_doi}
 # Public API
 # ---------------------------------------------------------------------------
 
-def verify_report(report_md: str, max_workers: int = 8) -> Dict[str, Dict]:
+def verify_report(report_md: str, drug_name: str = None, max_workers: int = 8) -> Dict[str, Dict]:
     """
     Extract and verify all identifiers in report_md in parallel.
 
+    Args:
+        report_md:  Report markdown content.
+        drug_name:  If provided, NCT numbers are cross-checked to confirm
+                    the trial actually involves this drug.
+
     Returns:
         {
-            "NCT04523584": {"type": "nct",  "valid": True,  "details": "verified on ClinicalTrials.gov"},
+            "NCT04523584": {"type": "nct",  "valid": True,  "details": "...", "drug_match": True},
+            "NCT99999999": {"type": "nct",  "valid": False, "details": "not found", "drug_match": None},
             "99999999":    {"type": "pmid", "valid": False, "details": "ID not found in PubMed"},
             ...
         }
@@ -127,15 +158,21 @@ def verify_report(report_md: str, max_workers: int = 8) -> Dict[str, Dict]:
     results: Dict[str, Dict] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(_VERIFIERS[id_type], id_val): (id_val, id_type)
+            pool.submit(_verify_nct, id_val, drug_name) if id_type == "nct"
+            else pool.submit(_VERIFIERS[id_type], id_val): (id_val, id_type)
             for id_val, id_type in tasks
         }
         for future in as_completed(future_map):
             id_val, id_type = future_map[future]
             try:
-                valid, details = future.result()
+                result = future.result()
+                if id_type == "nct":
+                    valid, details, drug_match = result
+                    results[id_val] = {"type": id_type, "valid": valid, "details": details, "drug_match": drug_match}
+                else:
+                    valid, details = result
+                    results[id_val] = {"type": id_type, "valid": valid, "details": details}
             except Exception as e:
-                valid, details = False, f"check failed: {e}"
-            results[id_val] = {"type": id_type, "valid": valid, "details": details}
+                results[id_val] = {"type": id_type, "valid": False, "details": f"check failed: {e}"}
 
     return results

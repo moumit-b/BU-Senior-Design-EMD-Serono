@@ -278,7 +278,7 @@ def _generate_and_display_report(
             if db_manager and report_md:
                 report_id = _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, report_md)
                 log("Report saved to database")
-                _run_and_save_verification(db_manager, report_id, report_md, log)
+                _run_and_save_verification(db_manager, report_id, report_md, log, drug_name=drug_name)
         elif result:
             st.session_state.generated_report = (
                 f"# Report Generation Failed\n\n**Error:** {result.error_message}\n\n"
@@ -316,14 +316,14 @@ def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_t
         return None
 
 
-def _run_and_save_verification(db_manager, report_id: str, report_md: str, log) -> None:
+def _run_and_save_verification(db_manager, report_id: str, report_md: str, log, drug_name: str = None) -> None:
     """Run identifier verification and persist results to report_verifications."""
     try:
         from utils.hallucination_checker import verify_report
         from context.db_models import ReportVerificationRecord
 
         log("Running identifier verification…")
-        results = verify_report(report_md)
+        results = verify_report(report_md, drug_name=drug_name)
 
         total = len(results)
         verified = sum(1 for r in results.values() if r["valid"])
@@ -412,21 +412,28 @@ def _render_verification_results() -> None:
         st.info("No verifiable identifiers (NCT numbers, PMIDs, DOIs) found in this report.")
         return
 
-    valid   = {k: v for k, v in results.items() if v["valid"]}
-    invalid = {k: v for k, v in results.items() if not v["valid"]}
+    invalid   = {k: v for k, v in results.items() if not v["valid"]}
+    wrong_drug = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is False}
+    verified  = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is not False}
 
     label = (
         f"Identifier Verification — "
-        f"{len(valid)} verified ✓  |  {len(invalid)} failed ✗"
+        f"{len(verified)} verified ✓  |  "
+        f"{len(wrong_drug)} wrong drug ⚠  |  "
+        f"{len(invalid)} not found ✗"
     )
-    with st.expander(label, expanded=len(invalid) > 0):
+    with st.expander(label, expanded=len(invalid) > 0 or len(wrong_drug) > 0):
         if invalid:
-            st.error(f"{len(invalid)} identifier(s) could not be verified — possible hallucination:")
+            st.error(f"{len(invalid)} identifier(s) not found — possible hallucination:")
             for id_val, r in invalid.items():
                 st.markdown(f"- `{id_val}` ({r['type'].upper()}) — {r['details']}")
-        if valid:
-            st.success(f"{len(valid)} identifier(s) confirmed real:")
-            for id_val, r in valid.items():
+        if wrong_drug:
+            st.warning(f"{len(wrong_drug)} NCT number(s) are real but don't match the research drug:")
+            for id_val, r in wrong_drug.items():
+                st.markdown(f"- `{id_val}` (NCT) — {r['details']}")
+        if verified:
+            st.success(f"{len(verified)} identifier(s) confirmed:")
+            for id_val, r in verified.items():
                 st.markdown(f"- `{id_val}` ({r['type'].upper()}) — {r['details']}")
 
 
