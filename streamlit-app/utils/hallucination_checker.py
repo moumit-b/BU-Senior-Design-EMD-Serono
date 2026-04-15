@@ -70,7 +70,7 @@ def _verify_nct(nct_id: str, drug_name: str = None) -> Tuple:
                     drug_match = _check_drug_in_trial(data, drug_name)
                     if drug_match:
                         return True, "verified on ClinicalTrials.gov", True
-                    return True, "verified — drug not found in this trial", False
+                    return True, "trial exists but does not involve this drug", False
                 return True, "verified on ClinicalTrials.gov", None
     except HTTPError as e:
         if e.code == 404:
