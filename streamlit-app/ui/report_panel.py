@@ -333,6 +333,7 @@ def _run_and_save_verification(db_manager, report_id: str, report_md: str, log, 
         st.session_state["hallucination_check"] = results
         st.session_state["hallucination_rate"] = rate
 
+        # Anomaly detection — run after saving so historical data is available
         if db_manager and report_id:
             with db_manager.get_session() as session:
                 session.add(ReportVerificationRecord(
@@ -344,6 +345,18 @@ def _run_and_save_verification(db_manager, report_id: str, report_md: str, log, 
                     details_json=results,
                 ))
         log(f"Verification: {verified}/{total} identifiers valid (hallucination rate {rate:.0%})")
+
+        # Anomaly detection against historical hallucination rates
+        try:
+            from utils.anomaly_detector import score_report
+            anomaly = score_report(db_manager, rate)
+            st.session_state["hallucination_anomaly"] = anomaly
+            if anomaly is True:
+                log("Anomaly detected: hallucination rate is a statistical outlier — scientist review flagged")
+            elif anomaly is None:
+                log("Anomaly detection skipped: insufficient historical data")
+        except Exception as e:
+            log(f"Anomaly detection failed (non-fatal): {e}")
     except Exception as e:
         log(f"Verification failed (non-fatal): {e}")
 
@@ -385,6 +398,7 @@ def _display_report(report_md: str, drug_name: str) -> None:
             st.session_state.pop("report_dev_log", None)
             st.session_state.pop("hallucination_check", None)
             st.session_state.pop("hallucination_rate", None)
+            st.session_state.pop("hallucination_anomaly", None)
             st.rerun()
 
     rate = st.session_state.get("hallucination_rate")
@@ -395,6 +409,14 @@ def _display_report(report_md: str, drug_name: str) -> None:
             st.warning(f"Hallucination rate: {rate:.0%} — some identifiers unverified", icon="⚠️")
         else:
             st.error(f"Hallucination rate: {rate:.0%} — high, expert review recommended", icon="🚨")
+
+    anomaly = st.session_state.get("hallucination_anomaly")
+    if anomaly is True:
+        st.error(
+            "Anomaly detected: this report's hallucination rate is a statistical outlier "
+            "compared to prior reports — scientist review recommended",
+            icon="🔬",
+        )
 
     _render_verification_results()
 
