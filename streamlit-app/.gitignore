@@ -31,8 +31,8 @@ env/
 # Environment Variables
 .env
 
-# Streamlit
-.streamlit/
+# Streamlit (only exclude secrets, not config.toml)
+.streamlit/secrets.toml
 
 # IDE
 .vscode/

@@ -15,8 +15,8 @@ env/
 .env
 *.env
 
-# Streamlit
-.streamlit/
+# Streamlit (only exclude secrets, not config.toml)
+streamlit-app/.streamlit/secrets.toml
 
 # IDEs
 .vscode/
@@ -81,3 +81,13 @@ report*.md
 
 # Progress tracking docs (local working notes)
 progress/
+
+# Architecture and ML docs (internal only)
+docs/architecture/
+ML Concentration Docs/
+
+# Added by code-review-graph
+.code-review-graph/
+
+#Claude Skills
+.claude/skills/*streamlit*/
