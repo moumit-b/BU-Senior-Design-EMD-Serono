@@ -7,6 +7,7 @@ Supports both PostgreSQL (Supabase — shared across machines) and SQLite
 Set SUPABASE_DB_URL in .env to enable cross-machine persistence.
 """
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,8 @@ from sqlalchemy import create_engine, event, Engine, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from .db_models import Base
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
@@ -51,22 +54,43 @@ class DatabaseManager:
             return
 
         if self._using_postgres:
-            self._engine = create_engine(
-                self._database_url,
-                pool_pre_ping=True,
-                pool_recycle=300,
-                pool_size=5,
-                max_overflow=10,
-                echo=False,
-            )
-            # Enable pgvector extension if available
             try:
+                self._engine = create_engine(
+                    self._database_url,
+                    pool_pre_ping=True,
+                    pool_recycle=300,
+                    pool_size=5,
+                    max_overflow=10,
+                    echo=False,
+                )
+                # Enable pgvector extension if available
+                try:
+                    with self._engine.connect() as conn:
+                        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                        conn.commit()
+                except Exception:
+                    pass  # pgvector may already exist or not be available
+
+                # Verify the connection is actually reachable before proceeding
                 with self._engine.connect() as conn:
-                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                    conn.commit()
-            except Exception:
-                pass  # pgvector may already exist or not be available
-        else:
+                    conn.execute(text("SELECT 1"))
+
+            except Exception as pg_err:
+                logger.warning(
+                    "Supabase/PostgreSQL unreachable (%s: %s) — falling back to local SQLite.",
+                    type(pg_err).__name__,
+                    pg_err,
+                )
+                print(
+                    f"[database] WARNING: PostgreSQL unavailable ({type(pg_err).__name__}). "
+                    "Using local SQLite fallback."
+                )
+                self._engine = None
+                self._using_postgres = False
+                if not Path(self._db_path).parent.exists():
+                    Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+
+        if not self._using_postgres and self._engine is None:
             from sqlalchemy.pool import StaticPool
             self._engine = create_engine(
                 f"sqlite:///{self._db_path}",
