@@ -8,6 +8,7 @@ and average latencies per agent-tool pair.
 import streamlit as st
 import pandas as pd
 from typing import Optional
+import theme as _theme
 
 
 def render_tool_metrics(db_manager) -> None:
@@ -21,8 +22,14 @@ def render_tool_metrics(db_manager) -> None:
     summary = tracker.get_summary()
     metrics = tracker.get_all_metrics()
 
+    p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
+
     # --- Summary cards ---
-    st.markdown("### Overview")
+    st.markdown(
+        f"<h3 style='font-size:1rem;font-weight:600;color:{p.text_secondary};"
+        f"letter-spacing:0.04em;margin-bottom:0.8rem'>Tool Call Overview</h3>",
+        unsafe_allow_html=True,
+    )
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.metric("Total Calls", summary["total_calls"])
@@ -35,7 +42,7 @@ def render_tool_metrics(db_manager) -> None:
     with c5:
         st.metric("Success Rate", f"{summary['overall_success_rate']}%")
 
-    st.divider()
+    st.markdown("<div class='gradient-divider'></div>", unsafe_allow_html=True)
 
     if not metrics:
         st.info("No tool calls recorded yet. Run a research query to populate metrics.")
@@ -100,8 +107,12 @@ def render_tool_metrics(db_manager) -> None:
 
     # --- Per-agent breakdown ---
     if selected_agent == "All Agents" and len(agents) > 1:
-        st.divider()
-        st.markdown("### Calls per Agent")
+        st.markdown("<div class='gradient-divider'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<h4 style='font-size:0.9rem;font-weight:600;color:{p.text_secondary};"
+            f"letter-spacing:0.04em;margin-bottom:0.6rem'>Calls per Agent</h4>",
+            unsafe_allow_html=True,
+        )
         agent_totals = {}
         for m in metrics:
             a = m["agent_name"]

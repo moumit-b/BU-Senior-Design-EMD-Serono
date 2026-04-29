@@ -13,6 +13,8 @@ import time
 import streamlit as st
 from typing import List, Dict, Any, Optional
 
+import theme as _theme
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,8 @@ def render_report_panel(agent, db_manager=None, vector_store=None) -> None:
 
     chat_session_id = st.session_state.get("current_chat_session_id")
 
+    p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
+
     if drug_name is None:
         st.info(
             "**No subject identified.**\n\n"
@@ -42,7 +46,14 @@ def render_report_panel(agent, db_manager=None, vector_store=None) -> None:
         _render_past_reports(db_manager, chat_session_id=chat_session_id)
         return
 
-    st.success(f"**Research subject:** {drug_name}")
+    # Gradient drug badge
+    gradient = f"linear-gradient(135deg, {p.accent}, {p.accent_end})"
+    st.markdown(
+        f"<div style='margin-bottom:1rem'>"
+        f"<span class='badge badge-drug'>⬡ Research subject: {drug_name}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
     selected_type = st.selectbox(
         "Report Type",
@@ -401,21 +412,32 @@ def _display_report(report_md: str, drug_name: str) -> None:
             st.session_state.pop("hallucination_anomaly", None)
             st.rerun()
 
+    p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
     rate = st.session_state.get("hallucination_rate")
     if rate is not None:
         if rate == 0.0:
-            st.success(f"Hallucination rate: 0% — all identifiers verified", icon="✅")
+            badge_cls = "badge-success"
+            badge_text = "✓ 0% hallucination — all identifiers verified"
         elif rate < 0.3:
-            st.warning(f"Hallucination rate: {rate:.0%} — some identifiers unverified", icon="⚠️")
+            badge_cls = "badge-warning"
+            badge_text = f"⚠ {rate:.0%} hallucination — some identifiers unverified"
         else:
-            st.error(f"Hallucination rate: {rate:.0%} — high, expert review recommended", icon="🚨")
+            badge_cls = "badge-error"
+            badge_text = f"✗ {rate:.0%} hallucination — high, expert review recommended"
+        st.markdown(
+            f"<div style='margin:0.6rem 0'><span class='badge {badge_cls}'>{badge_text}</span></div>",
+            unsafe_allow_html=True,
+        )
 
     anomaly = st.session_state.get("hallucination_anomaly")
     if anomaly is True:
-        st.error(
-            "Anomaly detected: this report's hallucination rate is a statistical outlier "
-            "compared to prior reports — scientist review recommended",
-            icon="🔬",
+        st.markdown(
+            f"<div class='anomaly-alert' style='margin:0.6rem 0'>"
+            f"<strong style='color:{p.warning}'>🔬 Anomaly Detected</strong><br>"
+            f"<span style='font-size:0.85rem'>This report's hallucination rate is a statistical outlier "
+            f"compared to prior reports — scientist review recommended.</span>"
+            f"</div>",
+            unsafe_allow_html=True,
         )
 
     _render_verification_results()
@@ -434,9 +456,9 @@ def _render_verification_results() -> None:
         st.info("No verifiable identifiers (NCT numbers, PMIDs, DOIs) found in this report.")
         return
 
-    invalid   = {k: v for k, v in results.items() if not v["valid"]}
+    invalid    = {k: v for k, v in results.items() if not v["valid"]}
     wrong_drug = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is False}
-    verified  = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is not False}
+    verified   = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is not False}
 
     label = (
         f"Identifier Verification — "
@@ -446,17 +468,53 @@ def _render_verification_results() -> None:
     )
     with st.expander(label, expanded=len(invalid) > 0 or len(wrong_drug) > 0):
         if invalid:
-            st.error(f"{len(invalid)} identifier(s) not found — possible hallucination:")
+            st.markdown(
+                f"<div style='font-size:0.8rem;font-weight:600;margin-bottom:0.5rem'>"
+                f"✗ {len(invalid)} identifier(s) not found — possible hallucination</div>",
+                unsafe_allow_html=True,
+            )
             for id_val, r in invalid.items():
-                st.markdown(f"- `{id_val}` ({r['type'].upper()}) — {r['details']}")
+                st.markdown(
+                    f"<div class='verify-card verify-err'>"
+                    f"<span class='verify-icon'>✗</span>"
+                    f"<div><code style='font-size:0.8rem'>{id_val}</code> "
+                    f"<span style='font-size:0.75rem;opacity:0.7'>({r['type'].upper()})</span>"
+                    f"<br><span style='font-size:0.78rem'>{r['details']}</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
         if wrong_drug:
-            st.warning(f"{len(wrong_drug)} NCT number(s) are real but don't match the research drug:")
+            st.markdown(
+                f"<div style='font-size:0.8rem;font-weight:600;margin:0.6rem 0 0.5rem'>"
+                f"⚠ {len(wrong_drug)} NCT number(s) exist but don't match the research drug</div>",
+                unsafe_allow_html=True,
+            )
             for id_val, r in wrong_drug.items():
-                st.markdown(f"- `{id_val}` (NCT) — {r['details']}")
+                st.markdown(
+                    f"<div class='verify-card verify-warn'>"
+                    f"<span class='verify-icon'>⚠</span>"
+                    f"<div><code style='font-size:0.8rem'>{id_val}</code> "
+                    f"<span style='font-size:0.75rem;opacity:0.7'>(NCT)</span>"
+                    f"<br><span style='font-size:0.78rem'>{r['details']}</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
         if verified:
-            st.success(f"{len(verified)} identifier(s) confirmed:")
+            st.markdown(
+                f"<div style='font-size:0.8rem;font-weight:600;margin:0.6rem 0 0.5rem'>"
+                f"✓ {len(verified)} identifier(s) confirmed</div>",
+                unsafe_allow_html=True,
+            )
             for id_val, r in verified.items():
-                st.markdown(f"- `{id_val}` ({r['type'].upper()}) — {r['details']}")
+                st.markdown(
+                    f"<div class='verify-card verify-ok'>"
+                    f"<span class='verify-icon'>✓</span>"
+                    f"<div><code style='font-size:0.8rem'>{id_val}</code> "
+                    f"<span style='font-size:0.75rem;opacity:0.7'>({r['type'].upper()})</span>"
+                    f"<br><span style='font-size:0.78rem'>{r['details']}</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
 
 def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug_name: Optional[str] = None) -> None:
@@ -506,22 +564,34 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
         if not records:
             return
 
+        p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
         label = f"Past Reports — {drug_name}" if drug_name else "Past Reports"
         with st.expander(label, expanded=True):
             for r in records:
                 date_str = r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else "unknown"
                 rate = r["hallucination_rate"]
                 if rate is None:
-                    rate_badge = "· ⬜ unverified"
+                    rate_badge_html = f"<span class='badge' style='background:{p.bg_hover};color:{p.text_muted};border:1px solid {p.border};font-size:0.7rem;padding:2px 8px'>⬜ unverified</span>"
                 elif rate == 0.0:
-                    rate_badge = "· ✅ 0% hallucination"
+                    rate_badge_html = f"<span class='badge badge-success' style='font-size:0.7rem;padding:2px 8px'>✓ 0%</span>"
                 elif rate < 0.3:
-                    rate_badge = f"· ⚠️ {rate:.0%} hallucination"
+                    rate_badge_html = f"<span class='badge badge-warning' style='font-size:0.7rem;padding:2px 8px'>⚠ {rate:.0%}</span>"
                 else:
-                    rate_badge = f"· 🚨 {rate:.0%} hallucination"
+                    rate_badge_html = f"<span class='badge badge-error' style='font-size:0.7rem;padding:2px 8px'>✗ {rate:.0%}</span>"
+
+                safe = r["drug_name"].replace(" ", "_")
+                date_sfx = r["created_at"].strftime("%Y%m%d") if r["created_at"] else "report"
+
                 col_info, col_view, col_md, col_pdf = st.columns([3, 1, 1, 1])
                 with col_info:
-                    st.markdown(f"**{r['drug_name']}** · {REPORT_TYPES.get(r['report_type'], r['report_type'])} · {date_str} {rate_badge}")
+                    st.markdown(
+                        f"<div class='report-row'>"
+                        f"<strong style='color:{p.text_primary}'>{r['drug_name']}</strong> "
+                        f"<span style='color:{p.text_muted};font-size:0.8rem'>· {REPORT_TYPES.get(r['report_type'], r['report_type'])} · {date_str}</span> "
+                        f"{rate_badge_html}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
                 with col_view:
                     if st.button("View", key=f"view_{r['report_id']}"):
                         st.session_state.generated_report = r["content_md"]
@@ -530,8 +600,6 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                         st.session_state["hallucination_check"] = r["verification_details"]
                         st.rerun()
                 with col_md:
-                    safe = r["drug_name"].replace(" ", "_")
-                    date_sfx = r["created_at"].strftime("%Y%m%d") if r["created_at"] else "report"
                     st.download_button(
                         ".md",
                         data=r["content_md"],
