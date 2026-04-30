@@ -337,9 +337,11 @@ def _run_and_save_verification(db_manager, report_id: str, report_md: str, log, 
         results = verify_report(report_md, drug_name=drug_name)
 
         total = len(results)
-        verified = sum(1 for r in results.values() if r["valid"])
-        unverified = total - verified
-        rate = round(unverified / total, 3) if total > 0 else 0.0
+        verified = sum(1 for r in results.values() if r["valid"] is True)
+        not_found = sum(1 for r in results.values() if r["valid"] is False)
+        unverified = not_found  # rate-limited excluded from hallucination score
+        checkable = sum(1 for r in results.values() if r["valid"] is not None)
+        rate = round(not_found / checkable, 3) if checkable > 0 else 0.0
 
         st.session_state["hallucination_check"] = results
         st.session_state["hallucination_rate"] = rate
@@ -456,16 +458,15 @@ def _render_verification_results() -> None:
         st.info("No verifiable identifiers (NCT numbers, PMIDs, DOIs) found in this report.")
         return
 
-    invalid    = {k: v for k, v in results.items() if not v["valid"]}
-    wrong_drug = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is False}
-    verified   = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is not False}
+    invalid      = {k: v for k, v in results.items() if v["valid"] is False}
+    unverifiable = {k: v for k, v in results.items() if v["valid"] is None}
+    verified     = {k: v for k, v in results.items() if v["valid"] is True}
 
-    label = (
-        f"Identifier Verification — "
-        f"{len(verified)} verified ✓  |  "
-        f"{len(wrong_drug)} wrong drug ⚠  |  "
-        f"{len(invalid)} not found ✗"
-    )
+    label_parts = [f"{len(verified)} verified ✓", f"{len(invalid)} not found ✗"]
+    if unverifiable:
+        label_parts.append(f"{len(unverifiable)} unverifiable ~")
+    label = "Identifier Verification — " + "  |  ".join(label_parts)
+
     with st.expander(label, expanded=len(invalid) > 0 or len(wrong_drug) > 0):
         if invalid:
             st.markdown(
@@ -483,18 +484,18 @@ def _render_verification_results() -> None:
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-        if wrong_drug:
+        if unverifiable:
             st.markdown(
                 f"<div style='font-size:0.8rem;font-weight:600;margin:0.6rem 0 0.5rem'>"
-                f"⚠ {len(wrong_drug)} NCT number(s) exist but don't match the research drug</div>",
+                f"~ {len(unverifiable)} identifier(s) could not be verified (rate limited)</div>",
                 unsafe_allow_html=True,
             )
-            for id_val, r in wrong_drug.items():
+            for id_val, r in unverifiable.items():
                 st.markdown(
-                    f"<div class='verify-card verify-warn'>"
-                    f"<span class='verify-icon'>⚠</span>"
+                    f"<div class='verify-card' style='border-left:3px solid #888'>"
+                    f"<span class='verify-icon'>~</span>"
                     f"<div><code style='font-size:0.8rem'>{id_val}</code> "
-                    f"<span style='font-size:0.75rem;opacity:0.7'>(NCT)</span>"
+                    f"<span style='font-size:0.75rem;opacity:0.7'>({r['type'].upper()})</span>"
                     f"<br><span style='font-size:0.78rem'>{r['details']}</span></div>"
                     f"</div>",
                     unsafe_allow_html=True,
