@@ -371,6 +371,20 @@ def main() -> None:
     cache_buster = str(int(time.time() // 300))
     agent = initialize_agent_with_config(selected_config, cache_buster)
 
+    # Re-populate session state from the process-level cache on page refresh.
+    # @st.cache_resource runs once globally; st.session_state resets each browser
+    # session, so the side-effects inside the cached function don't re-run.
+    if "mcp_orchestrator" not in st.session_state and _active_wrappers:
+        try:
+            feature_flags = (load_configuration_data(selected_config) or {}).get("feature_flags", {})
+            from orchestration.mcp_orchestrator import MCPOrchestrator
+            mcp_orch = MCPOrchestrator(mcp_wrappers=_active_wrappers)
+            if feature_flags.get("use_governance_gateway", True) and st.session_state.get("gateway"):
+                mcp_orch.set_gateway(st.session_state["gateway"])
+            st.session_state["mcp_orchestrator"] = mcp_orch
+        except Exception:
+            pass
+
     if agent is None:
         st.error("Agent initialization failed. Please check your LLM configuration.")
         return
