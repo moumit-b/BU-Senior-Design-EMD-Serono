@@ -379,8 +379,8 @@ def main() -> None:
     chat_session_id = ensure_active_session(db, user_id)
 
     # ── Tabs ──────────────────────────────────────────────────────────────
-    tab_research, tab_reports, tab_metrics, tab_governance = st.tabs([
-        "Research", "Reports", "Tool Metrics", "Governance"
+    tab_research, tab_reports, tab_metrics, tab_governance, tab_catalog = st.tabs([
+        "Research", "Reports", "Tool Metrics", "Governance", "Tool Catalog"
     ])
 
     # ── Tab 1: Research ───────────────────────────────────────────────────
@@ -445,6 +445,11 @@ def main() -> None:
     with tab_governance:
         from ui.governance_tab import render_governance_tab
         render_governance_tab(st.session_state.get("gateway"))
+
+    # ── Tab 5: Tool Catalog ───────────────────────────────────────────────
+    with tab_catalog:
+        from ui.tool_catalog_tab import render_tool_catalog
+        render_tool_catalog(_active_wrappers)
 
 
 if __name__ == "__main__":

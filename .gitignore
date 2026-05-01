@@ -32,8 +32,11 @@ Thumbs.db
 results/
 *.log
 
-# Runtime data (SQLite databases, vector stores)
-streamlit-app/data/
+# Runtime data (SQLite databases, vector stores — keep tool_catalog.csv tracked)
+streamlit-app/data/chroma/
+streamlit-app/data/*.db
+streamlit-app/data/*.db-shm
+streamlit-app/data/*.db-wal
 *.db
 
 # Node modules (install via npm install in each server directory)

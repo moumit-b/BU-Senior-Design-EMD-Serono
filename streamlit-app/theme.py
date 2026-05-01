@@ -39,16 +39,16 @@ class Palette:
 DARK = Palette(
     bg_primary="#080b14",
     bg_secondary="#0f1420",
-    bg_card="#131825",
+    bg_card="#141a28",
     bg_hover="#1a2035",
     accent="#3a7bd5",
     accent_end="#5b9cf5",
     accent_glow="rgba(58,123,213,0.15)",
     text_primary="#e2e8f0",
     text_secondary="#94a3b8",
-    text_muted="#4a5568",
-    border="#1e2535",
-    border_subtle="#161d2e",
+    text_muted="#5a6a7e",
+    border="#243044",
+    border_subtle="#1c2638",
     success="#34d399",
     warning="#f59e0b",
     error="#ef4444",
@@ -58,20 +58,20 @@ DARK = Palette(
 LIGHT = Palette(
     bg_primary="#f0f4f8",
     bg_secondary="#ffffff",
-    bg_card="#ffffff",
-    bg_hover="#e8eef5",
+    bg_card="#f8fafc",
+    bg_hover="#dde5f0",
     accent="#2563eb",
     accent_end="#3b82f6",
     accent_glow="rgba(37,99,235,0.12)",
     text_primary="#1e293b",
     text_secondary="#475569",
-    text_muted="#94a3b8",
-    border="#dde5ee",
-    border_subtle="#e8eef5",
+    text_muted="#64748b",
+    border="#cbd5e1",
+    border_subtle="#e2e8f0",
     success="#059669",
     warning="#d97706",
     error="#dc2626",
-    tab_inactive="#64748b",
+    tab_inactive="#566479",
 )
 
 _PALETTES = {"dark": DARK, "light": LIGHT}
@@ -106,6 +106,44 @@ _KEYFRAMES = """
     0%, 100% { border-color: #f59e0b; }
     50%       { border-color: #fcd34d; }
 }
+@keyframes blobMorph1 {
+    0%, 100% {
+        border-radius: 40% 60% 55% 45% / 50% 40% 60% 50%;
+        transform: translate(0, 0) scale(1);
+    }
+    33% {
+        border-radius: 55% 45% 60% 40% / 40% 55% 45% 55%;
+        transform: translate(4%, 6%) scale(1.04);
+    }
+    66% {
+        border-radius: 45% 55% 40% 60% / 55% 45% 55% 45%;
+        transform: translate(-3%, 4%) scale(0.97);
+    }
+}
+@keyframes blobMorph2 {
+    0%, 100% {
+        border-radius: 55% 45% 40% 60% / 45% 55% 50% 50%;
+        transform: translate(0, 0) scale(1);
+    }
+    33% {
+        border-radius: 40% 60% 55% 45% / 60% 40% 55% 45%;
+        transform: translate(-5%, -3%) scale(1.06);
+    }
+    66% {
+        border-radius: 50% 50% 45% 55% / 50% 50% 55% 45%;
+        transform: translate(3%, 5%) scale(0.95);
+    }
+}
+@keyframes blobMorph3 {
+    0%, 100% {
+        border-radius: 50% 40% 55% 45% / 55% 50% 45% 50%;
+        transform: translate(0, 0) scale(1);
+    }
+    50% {
+        border-radius: 45% 55% 50% 50% / 40% 55% 50% 50%;
+        transform: translate(-4%, 3%) scale(1.03);
+    }
+}
 """
 
 
@@ -124,24 +162,98 @@ def get_css(theme: str = "dark") -> str:
         f"linear-gradient(to right, transparent, {p.border}, transparent)"
     )
 
+    if is_light:
+        blob1_color = "rgba(37,99,235,0.10)"
+        blob2_color = "rgba(124,58,237,0.06)"
+        blob3_color = "rgba(14,165,233,0.05)"
+        sidebar_overlay = (
+            "radial-gradient(ellipse 120% 60% at 0% 20%, rgba(37,99,235,0.07) 0%, transparent 70%)"
+        )
+    else:
+        blob1_color = "rgba(58,123,213,0.14)"
+        blob2_color = "rgba(124,58,237,0.09)"
+        blob3_color = "rgba(56,189,248,0.06)"
+        sidebar_overlay = (
+            "radial-gradient(ellipse 120% 60% at 0% 20%, rgba(58,123,213,0.10) 0%, transparent 70%)"
+        )
+
     return f"""
 <style>
 @import url('{FONT_IMPORT}');
 {_KEYFRAMES}
 
 /* ── Global ──────────────────────────────────────────────────────────────── */
-html, body, [data-testid="stAppViewContainer"] {{
+html, body {{
     font-family: 'IBM Plex Sans', sans-serif;
     background-color: {p.bg_primary};
     color: {p.text_primary};
 }}
-[data-testid="stAppViewContainer"] > .main {{
+[data-testid="stAppViewContainer"] {{
+    font-family: 'IBM Plex Sans', sans-serif;
     background-color: {p.bg_primary};
+    color: {p.text_primary};
+    position: relative;
+    overflow: hidden;
+}}
+
+/* Blob 1 — blue, top-left */
+[data-testid="stAppViewContainer"]::before {{
+    content: '';
+    position: fixed;
+    top: -15%;
+    left: -8%;
+    width: 55vw;
+    height: 55vh;
+    background: {blob1_color};
+    border-radius: 40% 60% 55% 45% / 50% 40% 60% 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+    animation: blobMorph1 25s ease-in-out infinite;
+}}
+
+/* Blob 2 — purple, bottom-right */
+[data-testid="stAppViewContainer"]::after {{
+    content: '';
+    position: fixed;
+    bottom: -12%;
+    right: -8%;
+    width: 50vw;
+    height: 50vh;
+    background: {blob2_color};
+    border-radius: 55% 45% 40% 60% / 45% 55% 50% 50%;
+    filter: blur(90px);
+    pointer-events: none;
+    z-index: 0;
+    animation: blobMorph2 30s ease-in-out infinite;
+}}
+
+/* Blob 3 — cyan, center-right — on .main::before so it's a third layer */
+[data-testid="stAppViewContainer"] > .main {{
+    position: relative;
+    z-index: 1;
+    background: transparent;
+}}
+[data-testid="stAppViewContainer"] > .main::before {{
+    content: '';
+    position: fixed;
+    top: 32%;
+    right: 8%;
+    width: 38vw;
+    height: 38vh;
+    background: {blob3_color};
+    border-radius: 50% 40% 55% 45% / 55% 50% 45% 50%;
+    filter: blur(100px);
+    pointer-events: none;
+    z-index: 0;
+    animation: blobMorph3 35s ease-in-out infinite;
 }}
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {{
     background-color: {p.bg_secondary};
+    background-image: {sidebar_overlay};
+    background-size: 200% 200%;
     border-right: 1px solid {p.border};
 }}
 [data-testid="stSidebar"] p,
@@ -719,6 +831,82 @@ hr {{ border-color: {p.border} !important; }}
     border-color: {p.accent};
     background: {p.accent_glow};
 }}
+
+/* ── Tool Catalog cards ──────────────────────────────────────────────────── */
+.tool-card {{
+    background: {p.bg_card};
+    border: 1px solid {p.border};
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.55rem;
+    transition: transform 0.18s, border-color 0.2s, box-shadow 0.2s;
+    animation: fadeIn 0.3s ease forwards;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}}
+.tool-card:hover {{
+    transform: translateY(-2px);
+    border-color: {p.accent}66;
+    box-shadow: 0 6px 20px {p.accent_glow};
+}}
+.tool-card .tool-name {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.83rem;
+    font-weight: 500;
+    color: {p.accent_end};
+    word-break: break-all;
+}}
+.tool-card .tool-desc {{
+    font-size: 0.79rem;
+    color: {p.text_secondary};
+    line-height: 1.5;
+    margin: 0;
+}}
+.tool-avail-row {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 0.25rem;
+}}
+.cat-badge {{
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.67rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    background: {p.accent}18;
+    color: {p.accent_end};
+    border: 1px solid {p.accent}2a;
+    margin: 1px 2px 0 0;
+    white-space: nowrap;
+}}
+.cat-section-header {{
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+}}
+.cat-count-badge {{
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+    background: {p.accent}22;
+    color: {p.accent_end};
+    border: 1px solid {p.accent}33;
+}}
+.avail-dot-inline {{
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    animation: pulseGlow 2s ease-in-out infinite;
+}}
+.avail-dot-inline.ok  {{ background: {p.success}; box-shadow: 0 0 6px {p.success}88; }}
+.avail-dot-inline.off {{ background: {p.border}; opacity: 0.6; }}
 
 /* ── Hide Streamlit branding ─────────────────────────────────────────────── */
 #MainMenu {{ visibility: hidden; }}
