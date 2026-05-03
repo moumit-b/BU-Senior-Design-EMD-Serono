@@ -17,6 +17,7 @@ import asyncio
 import streamlit as st
 from typing import Optional
 
+import theme as _theme
 from agent import MCPAgent
 from mcp_tools import initialize_mcp_tools, _active_wrappers
 from config_manager import config_manager
@@ -40,222 +41,12 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
-# Professional CSS — dark, clean, clinical aesthetic
+# CSS injection — delegates to theme module
 # ---------------------------------------------------------------------------
 
 def _inject_css() -> None:
-    st.markdown(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-        /* ── Global ─────────────────────────────────────────────────── */
-        html, body, [data-testid="stAppViewContainer"] {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: #0b0e17;
-            color: #c8d3e0;
-        }
-
-        /* ── Sidebar ─────────────────────────────────────────────────── */
-        [data-testid="stSidebar"] {
-            background-color: #111520;
-            border-right: 1px solid #1e2535;
-        }
-        [data-testid="stSidebar"] p,
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] div,
-        [data-testid="stSidebar"] input,
-        [data-testid="stSidebar"] select,
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
-            font-family: 'IBM Plex Sans', sans-serif !important;
-        }
-        [data-testid="stSidebarContent"] {
-            padding-top: 1.4rem;
-        }
-
-        /* Sidebar wordmark */
-        .sidebar-brand {
-            font-size: 0.7rem;
-            font-weight: 600;
-            letter-spacing: 0.18em;
-            text-transform: uppercase;
-            color: #3a7bd5;
-            margin-bottom: 0.2rem;
-        }
-        .sidebar-title {
-            font-size: 1.05rem;
-            font-weight: 600;
-            color: #e2e8f0;
-            margin-bottom: 1.2rem;
-            line-height: 1.3;
-        }
-
-        /* Status badge */
-        .llm-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.78rem;
-            color: #8899aa;
-            padding: 4px 0;
-        }
-        .llm-status .dot {
-            width: 7px; height: 7px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-        .llm-status .dot.ok  { background: #38b2ac; }
-        .llm-status .dot.err { background: #f56565; }
-
-        /* Sidebar history label */
-        .hist-label {
-            font-size: 0.68rem;
-            font-weight: 600;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: #4a5568;
-            margin: 0.6rem 0 0.3rem;
-        }
-
-        /* ── Main area ────────────────────────────────────────────────── */
-        .main .block-container {
-            padding-top: 1.6rem;
-            max-width: 1320px;
-        }
-
-        /* Page header */
-        .page-header {
-            display: flex;
-            align-items: baseline;
-            gap: 0.9rem;
-            margin-bottom: 1.2rem;
-            border-bottom: 1px solid #1e2535;
-            padding-bottom: 0.9rem;
-        }
-        .page-header h1 {
-            font-size: 1.4rem;
-            font-weight: 600;
-            color: #e2e8f0;
-            margin: 0;
-            letter-spacing: -0.01em;
-        }
-        .page-header .sub {
-            font-size: 0.78rem;
-            color: #4a5568;
-            font-weight: 400;
-        }
-
-        /* ── Tabs ─────────────────────────────────────────────────────── */
-        [data-testid="stTabs"] [data-baseweb="tab-list"] {
-            background: transparent;
-            gap: 0;
-            border-bottom: 1px solid #1e2535;
-            margin-bottom: 1.2rem;
-        }
-        [data-testid="stTabs"] [data-baseweb="tab"] {
-            font-family: 'IBM Plex Sans', sans-serif !important;
-            font-size: 0.83rem;
-            font-weight: 500;
-            letter-spacing: 0.02em;
-            color: #4a6080;
-            padding: 0.55rem 1.1rem;
-            border-bottom: 2px solid transparent;
-            background: transparent;
-            border-radius: 0;
-            transition: color 0.15s, border-color 0.15s;
-        }
-        [data-testid="stTabs"] [aria-selected="true"] {
-            color: #90cdf4 !important;
-            border-bottom: 2px solid #3a7bd5 !important;
-            background: transparent !important;
-        }
-        [data-testid="stTabs"] [data-baseweb="tab"]:hover {
-            color: #90cdf4 !important;
-            background: rgba(58, 123, 213, 0.06) !important;
-        }
-
-        /* ── Chat messages ────────────────────────────────────────────── */
-        [data-testid="stChatMessage"] {
-            border-radius: 6px;
-            padding: 0.3rem 0;
-            margin-bottom: 0.2rem;
-        }
-        [data-testid="stChatMessage"][data-testid*="user"] {
-            background: rgba(58, 123, 213, 0.05);
-        }
-
-        /* ── Metrics ─────────────────────────────────────────────────── */
-        [data-testid="stMetric"] {
-            background: #111520;
-            border: 1px solid #1e2535;
-            border-radius: 6px;
-            padding: 0.8rem 1rem;
-        }
-        [data-testid="stMetricLabel"] {
-            font-size: 0.72rem !important;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            color: #4a5568 !important;
-        }
-        [data-testid="stMetricValue"] {
-            font-family: 'IBM Plex Mono', monospace !important;
-            font-size: 1.5rem !important;
-            color: #e2e8f0 !important;
-        }
-
-        /* ── Expanders ────────────────────────────────────────────────── */
-        [data-testid="stExpander"] {
-            border: 1px solid #1e2535 !important;
-            border-radius: 5px !important;
-            background: #0f1320 !important;
-        }
-        [data-testid="stExpander"] summary {
-            font-size: 0.8rem !important;
-            color: #64748b !important;
-        }
-
-        /* ── Buttons ─────────────────────────────────────────────────── */
-        [data-testid="stButton"] button[kind="primary"] {
-            background: #1a3a6b !important;
-            border: 1px solid #2a5298 !important;
-            color: #90cdf4 !important;
-            font-weight: 500;
-            letter-spacing: 0.02em;
-        }
-        [data-testid="stButton"] button[kind="primary"]:hover {
-            background: #1e4080 !important;
-            border-color: #3a7bd5 !important;
-        }
-
-        /* ── Selectbox ────────────────────────────────────────────────── */
-        [data-testid="stSelectbox"] label {
-            font-size: 0.75rem !important;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: #4a5568 !important;
-        }
-
-        /* ── Info / success / warning ─────────────────────────────────── */
-        [data-testid="stAlert"] {
-            border-radius: 5px;
-            font-size: 0.85rem;
-        }
-
-        /* ── Scrollbar ────────────────────────────────────────────────── */
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: #0b0e17; }
-        ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 3px; }
-
-        /* ── Divider ─────────────────────────────────────────────────── */
-        hr { border-color: #1e2535 !important; }
-
-        /* Hide Streamlit branding but keep sidebar toggle */
-        #MainMenu { visibility: hidden; }
-        footer { visibility: hidden; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    active_theme = st.session_state.get("theme", "dark")
+    st.markdown(_theme.get_css(active_theme), unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -392,32 +183,57 @@ def display_intermediate_steps(steps) -> None:
     """Render agent reasoning steps in a collapsible expander."""
     if not steps:
         return
-    with st.expander("Agent Reasoning", expanded=False):
+    with st.expander(f"Agent Reasoning — {len(steps)} step{'s' if len(steps) != 1 else ''}", expanded=False):
         for i, (action, observation) in enumerate(steps, 1):
-            st.markdown(f"**Step {i}**")
+            p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
+            st.markdown(
+                f"<div style='font-size:0.75rem;font-weight:600;letter-spacing:0.08em;"
+                f"text-transform:uppercase;color:{p.text_muted};margin-bottom:0.4rem'>"
+                f"Step {i}</div>",
+                unsafe_allow_html=True,
+            )
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("Action")
+                st.markdown(
+                    f"<div style='font-size:0.72rem;font-weight:600;letter-spacing:0.06em;"
+                    f"text-transform:uppercase;color:{p.accent};margin-bottom:0.3rem'>Action</div>",
+                    unsafe_allow_html=True,
+                )
                 st.code(
                     f"Tool: {action.tool}\nInput: {action.tool_input}",
                     language="text",
                 )
             with col2:
-                st.markdown("Observation")
+                st.markdown(
+                    f"<div style='font-size:0.72rem;font-weight:600;letter-spacing:0.06em;"
+                    f"text-transform:uppercase;color:{p.success};margin-bottom:0.3rem'>Observation</div>",
+                    unsafe_allow_html=True,
+                )
                 st.code(str(observation)[:800], language="text")
             if i < len(steps):
-                st.divider()
+                st.markdown("<div class='gradient-divider'></div>", unsafe_allow_html=True)
 
 
 def _render_sidebar_config(profiles) -> str:
     """
     Render configuration section in sidebar. Returns selected config name.
     """
-    st.markdown(
-        "<div class='sidebar-brand'>EMD Serono</div>"
-        "<div class='sidebar-title'>Research Intelligence</div>",
-        unsafe_allow_html=True,
-    )
+    # Theme toggle — top right of brand section
+    col_brand, col_toggle = st.columns([5, 1])
+    with col_brand:
+        st.markdown(
+            "<div class='sidebar-icon'>⬡</div>"
+            "<div class='sidebar-brand'>EMD Serono</div>"
+            "<div class='sidebar-title'>Research Intelligence</div>"
+            "<div class='sidebar-subtitle'>Multi-Agent Research Platform</div>",
+            unsafe_allow_html=True,
+        )
+    with col_toggle:
+        current_theme = st.session_state.get("theme", "dark")
+        toggle_icon = "☀️" if current_theme == "dark" else "🌙"
+        if st.button(toggle_icon, key="theme_toggle", help="Toggle light/dark mode"):
+            st.session_state["theme"] = "light" if current_theme == "dark" else "dark"
+            st.rerun()
 
     profile_options = {name: p.display_name for name, p in profiles.items()}
     current = get_selected_configuration()
@@ -520,19 +336,21 @@ def main() -> None:
     # ── Sidebar ──────────────────────────────────────────────────────────
     profiles = config_manager.get_available_profiles()
 
+    p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
+
     with st.sidebar:
         selected_config = _render_sidebar_config(profiles)
 
-        st.divider()
+        st.markdown("<div class='gradient-divider'></div>", unsafe_allow_html=True)
 
         # Chat history (new conversation button + session list)
         render_sidebar_history(db, user_id)
 
-        st.divider()
+        st.markdown("<div class='gradient-divider'></div>", unsafe_allow_html=True)
 
         st.markdown(
-            f"<div style='font-size:0.72rem;color:#4a5568;margin-bottom:0.5rem'>"
-            f"Signed in as <strong style='color:#64748b'>{display_name}</strong>"
+            f"<div style='font-size:0.72rem;color:{p.text_muted};margin-bottom:0.5rem'>"
+            f"Signed in as <strong style='color:{p.text_secondary}'>{display_name}</strong>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -553,6 +371,20 @@ def main() -> None:
     cache_buster = str(int(time.time() // 300))
     agent = initialize_agent_with_config(selected_config, cache_buster)
 
+    # Re-populate session state from the process-level cache on page refresh.
+    # @st.cache_resource runs once globally; st.session_state resets each browser
+    # session, so the side-effects inside the cached function don't re-run.
+    if "mcp_orchestrator" not in st.session_state and _active_wrappers:
+        try:
+            feature_flags = (load_configuration_data(selected_config) or {}).get("feature_flags", {})
+            from orchestration.mcp_orchestrator import MCPOrchestrator
+            mcp_orch = MCPOrchestrator(mcp_wrappers=_active_wrappers)
+            if feature_flags.get("use_governance_gateway", True) and st.session_state.get("gateway"):
+                mcp_orch.set_gateway(st.session_state["gateway"])
+            st.session_state["mcp_orchestrator"] = mcp_orch
+        except Exception:
+            pass
+
     if agent is None:
         st.error("Agent initialization failed. Please check your LLM configuration.")
         return
@@ -561,8 +393,8 @@ def main() -> None:
     chat_session_id = ensure_active_session(db, user_id)
 
     # ── Tabs ──────────────────────────────────────────────────────────────
-    tab_research, tab_reports, tab_metrics, tab_governance = st.tabs([
-        "Research", "Reports", "Tool Metrics", "Governance"
+    tab_research, tab_reports, tab_metrics, tab_governance, tab_catalog = st.tabs([
+        "Research", "Reports", "Tool Metrics", "Governance", "Tool Catalog"
     ])
 
     # ── Tab 1: Research ───────────────────────────────────────────────────
@@ -627,6 +459,11 @@ def main() -> None:
     with tab_governance:
         from ui.governance_tab import render_governance_tab
         render_governance_tab(st.session_state.get("gateway"))
+
+    # ── Tab 5: Tool Catalog ───────────────────────────────────────────────
+    with tab_catalog:
+        from ui.tool_catalog_tab import render_tool_catalog
+        render_tool_catalog(_active_wrappers)
 
 
 if __name__ == "__main__":

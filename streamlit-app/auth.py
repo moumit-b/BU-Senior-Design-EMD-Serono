@@ -66,52 +66,27 @@ def render_login_page(db_manager) -> None:
     Render the login page. On success, sets session state and triggers a rerun.
     This should be called at the top of main() before any other UI is rendered.
     """
-    # Center the login form with custom CSS
-    st.markdown(
-        """
-        <style>
-        [data-testid="stAppViewContainer"] {
-            background: #0f1117;
-        }
-        .login-container {
-            max-width: 420px;
-            margin: 80px auto 0;
-            padding: 2.5rem 2rem;
-            background: #1a1d27;
-            border: 1px solid #2d3148;
-            border-radius: 12px;
-        }
-        .login-header {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        .login-header h1 {
-            font-size: 1.6rem;
-            font-weight: 700;
-            color: #e2e8f0;
-            margin: 0;
-        }
-        .login-header p {
-            color: #64748b;
-            font-size: 0.85rem;
-            margin-top: 0.3rem;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    import theme as _theme
+    active_theme = st.session_state.get("theme", "dark")
+    st.markdown(_theme.get_login_css(active_theme), unsafe_allow_html=True)
 
-    # Narrow centered column
-    col_l, col_c, col_r = st.columns([1, 1.8, 1])
+    # Narrow centered layout — card is styled via CSS
+    col_l, col_c, col_r = st.columns([1, 1.6, 1])
     with col_c:
-        st.markdown("---")
-        st.markdown("## Pharma Research Intelligence")
-        st.markdown("##### EMD Serono · Research Platform")
-        st.markdown("---")
+        st.markdown(
+            "<div class='login-card'>"
+            "<span class='login-icon'>⬡</span>"
+            "<div class='login-brand'>EMD Serono</div>"
+            "<h1 class='login-title'>Research Intelligence</h1>"
+            "<p class='login-subtitle'>Pharma Research Intelligence Platform</p>"
+            "<div class='login-divider'></div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
         with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
+            username = st.text_input("Username", placeholder="Enter username")
+            password = st.text_input("Password", type="password", placeholder="Enter password")
             submitted = st.form_submit_button("Sign In", use_container_width=True, type="primary")
 
         if submitted:
@@ -127,10 +102,11 @@ def render_login_page(db_manager) -> None:
                 else:
                     st.error("Invalid credentials. Please try again.")
 
+        p = _theme._PALETTES.get(active_theme, _theme.DARK)
         st.markdown(
-            "<div style='text-align:center;color:#475569;font-size:0.75rem;margin-top:1rem'>"
-            "Pharma Research Intelligence Platform"
-            "</div>",
+            f"<div class='login-footer'>"
+            f"EMD Serono · Pharma Research Intelligence Platform"
+            f"</div>",
             unsafe_allow_html=True,
         )
 

@@ -13,6 +13,8 @@ import time
 import streamlit as st
 from typing import List, Dict, Any, Optional
 
+import theme as _theme
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,8 @@ def render_report_panel(agent, db_manager=None, vector_store=None) -> None:
 
     chat_session_id = st.session_state.get("current_chat_session_id")
 
+    p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
+
     if drug_name is None:
         st.info(
             "**No subject identified.**\n\n"
@@ -42,7 +46,14 @@ def render_report_panel(agent, db_manager=None, vector_store=None) -> None:
         _render_past_reports(db_manager, chat_session_id=chat_session_id)
         return
 
-    st.success(f"**Research subject:** {drug_name}")
+    # Gradient drug badge
+    gradient = f"linear-gradient(135deg, {p.accent}, {p.accent_end})"
+    st.markdown(
+        f"<div style='margin-bottom:1rem'>"
+        f"<span class='badge badge-drug'>⬡ Research subject: {drug_name}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
     selected_type = st.selectbox(
         "Report Type",
@@ -183,6 +194,7 @@ def _generate_and_display_report(
 ) -> None:
     """Instantiate the ReportAgent and generate the report."""
     st.session_state["report_dev_log"] = []
+    st.session_state.pop("hallucination_check", None)
 
     def log(msg: str):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -273,10 +285,11 @@ def _generate_and_display_report(
             log(f"Report generated in {elapsed:.1f}s")
             log(f"MCPs used: {result.mcps_used}")
 
-            # Save report to database
+            # Save report to database then auto-verify identifiers
             if db_manager and report_md:
-                _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, report_md)
+                report_id = _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, report_md)
                 log("Report saved to database")
+                _run_and_save_verification(db_manager, report_id, report_md, log, drug_name=drug_name)
         elif result:
             st.session_state.generated_report = (
                 f"# Report Generation Failed\n\n**Error:** {result.error_message}\n\n"
@@ -294,8 +307,8 @@ def _generate_and_display_report(
     st.rerun()
 
 
-def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, content_md):
-    """Save the generated report to the reports table."""
+def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_type, content_md) -> Optional[str]:
+    """Save the generated report to the reports table. Returns report_id or None."""
     try:
         from context.db_models import ReportRecord
         with db_manager.get_session() as session:
@@ -308,8 +321,55 @@ def _save_report_to_db(db_manager, chat_session_id, user_id, drug_name, report_t
                 created_at=datetime.datetime.now(),
             )
             session.add(record)
+            return record.report_id
     except Exception as e:
         logger.warning(f"_save_report_to_db error: {e}")
+        return None
+
+
+def _run_and_save_verification(db_manager, report_id: str, report_md: str, log, drug_name: str = None) -> None:
+    """Run identifier verification and persist results to report_verifications."""
+    try:
+        from utils.hallucination_checker import verify_report
+        from context.db_models import ReportVerificationRecord
+
+        log("Running identifier verification…")
+        results = verify_report(report_md, drug_name=drug_name)
+
+        total = len(results)
+        verified = sum(1 for r in results.values() if r["valid"])
+        unverified = total - verified
+        rate = round(unverified / total, 3) if total > 0 else 0.0
+
+        st.session_state["hallucination_check"] = results
+        st.session_state["hallucination_rate"] = rate
+
+        # Anomaly detection — run after saving so historical data is available
+        if db_manager and report_id:
+            with db_manager.get_session() as session:
+                session.add(ReportVerificationRecord(
+                    report_id=report_id,
+                    total_identifiers=total,
+                    verified_count=verified,
+                    unverified_count=unverified,
+                    hallucination_rate=rate,
+                    details_json=results,
+                ))
+        log(f"Verification: {verified}/{total} identifiers valid (hallucination rate {rate:.0%})")
+
+        # Anomaly detection against historical hallucination rates
+        try:
+            from utils.anomaly_detector import score_report
+            anomaly = score_report(db_manager, rate)
+            st.session_state["hallucination_anomaly"] = anomaly
+            if anomaly is True:
+                log("Anomaly detected: hallucination rate is a statistical outlier — scientist review flagged")
+            elif anomaly is None:
+                log("Anomaly detection skipped: insufficient historical data")
+        except Exception as e:
+            log(f"Anomaly detection failed (non-fatal): {e}")
+    except Exception as e:
+        log(f"Verification failed (non-fatal): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -347,10 +407,114 @@ def _display_report(report_md: str, drug_name: str) -> None:
         if st.button("Clear Report", use_container_width=True):
             st.session_state.generated_report = None
             st.session_state.pop("report_dev_log", None)
+            st.session_state.pop("hallucination_check", None)
+            st.session_state.pop("hallucination_rate", None)
+            st.session_state.pop("hallucination_anomaly", None)
             st.rerun()
+
+    p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
+    rate = st.session_state.get("hallucination_rate")
+    if rate is not None:
+        if rate == 0.0:
+            badge_cls = "badge-success"
+            badge_text = "✓ 0% hallucination — all identifiers verified"
+        elif rate < 0.3:
+            badge_cls = "badge-warning"
+            badge_text = f"⚠ {rate:.0%} hallucination — some identifiers unverified"
+        else:
+            badge_cls = "badge-error"
+            badge_text = f"✗ {rate:.0%} hallucination — high, expert review recommended"
+        st.markdown(
+            f"<div style='margin:0.6rem 0'><span class='badge {badge_cls}'>{badge_text}</span></div>",
+            unsafe_allow_html=True,
+        )
+
+    anomaly = st.session_state.get("hallucination_anomaly")
+    if anomaly is True:
+        st.markdown(
+            f"<div class='anomaly-alert' style='margin:0.6rem 0'>"
+            f"<strong style='color:{p.warning}'>🔬 Anomaly Detected</strong><br>"
+            f"<span style='font-size:0.85rem'>This report's hallucination rate is a statistical outlier "
+            f"compared to prior reports — scientist review recommended.</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    _render_verification_results()
 
     with st.container(height=600):
         st.markdown(report_md)
+
+
+def _render_verification_results() -> None:
+    """Display identifier verification results below the report action buttons."""
+    results = st.session_state.get("hallucination_check")
+    if results is None:
+        return
+
+    if not results:
+        st.info("No verifiable identifiers (NCT numbers, PMIDs, DOIs) found in this report.")
+        return
+
+    invalid    = {k: v for k, v in results.items() if not v["valid"]}
+    wrong_drug = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is False}
+    verified   = {k: v for k, v in results.items() if v["valid"] and v.get("drug_match") is not False}
+
+    label = (
+        f"Identifier Verification — "
+        f"{len(verified)} verified ✓  |  "
+        f"{len(wrong_drug)} wrong drug ⚠  |  "
+        f"{len(invalid)} not found ✗"
+    )
+    with st.expander(label, expanded=len(invalid) > 0 or len(wrong_drug) > 0):
+        if invalid:
+            st.markdown(
+                f"<div style='font-size:0.8rem;font-weight:600;margin-bottom:0.5rem'>"
+                f"✗ {len(invalid)} identifier(s) not found — possible hallucination</div>",
+                unsafe_allow_html=True,
+            )
+            for id_val, r in invalid.items():
+                st.markdown(
+                    f"<div class='verify-card verify-err'>"
+                    f"<span class='verify-icon'>✗</span>"
+                    f"<div><code style='font-size:0.8rem'>{id_val}</code> "
+                    f"<span style='font-size:0.75rem;opacity:0.7'>({r['type'].upper()})</span>"
+                    f"<br><span style='font-size:0.78rem'>{r['details']}</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        if wrong_drug:
+            st.markdown(
+                f"<div style='font-size:0.8rem;font-weight:600;margin:0.6rem 0 0.5rem'>"
+                f"⚠ {len(wrong_drug)} NCT number(s) exist but don't match the research drug</div>",
+                unsafe_allow_html=True,
+            )
+            for id_val, r in wrong_drug.items():
+                st.markdown(
+                    f"<div class='verify-card verify-warn'>"
+                    f"<span class='verify-icon'>⚠</span>"
+                    f"<div><code style='font-size:0.8rem'>{id_val}</code> "
+                    f"<span style='font-size:0.75rem;opacity:0.7'>(NCT)</span>"
+                    f"<br><span style='font-size:0.78rem'>{r['details']}</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        if verified:
+            st.markdown(
+                f"<div style='font-size:0.8rem;font-weight:600;margin:0.6rem 0 0.5rem'>"
+                f"✓ {len(verified)} identifier(s) confirmed</div>",
+                unsafe_allow_html=True,
+            )
+            for id_val, r in verified.items():
+                st.markdown(
+                    f"<div class='verify-card verify-ok'>"
+                    f"<span class='verify-icon'>✓</span>"
+                    f"<div><code style='font-size:0.8rem'>{id_val}</code> "
+                    f"<span style='font-size:0.75rem;opacity:0.7'>({r['type'].upper()})</span>"
+                    f"<br><span style='font-size:0.78rem'>{r['details']}</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
 
 def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug_name: Optional[str] = None) -> None:
@@ -358,7 +522,7 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
     if db_manager is None:
         return
     try:
-        from context.db_models import ReportRecord
+        from context.db_models import ReportRecord, ReportVerificationRecord
         from reporting.exporters.pdf_exporter import PDFExporter
         with db_manager.get_session() as session:
             base = session.query(ReportRecord)
@@ -370,7 +534,20 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                 ).order_by(ReportRecord.created_at.desc()).limit(10)
             else:
                 q = base.order_by(ReportRecord.created_at.desc()).limit(20)
-            # Materialize into plain dicts before session closes to avoid DetachedInstanceError
+            report_rows = q.all()
+
+            # Fetch verification rates for these reports in one query
+            report_ids = [r.report_id for r in report_rows]
+            verifications = {}
+            if report_ids:
+                vrows = session.query(ReportVerificationRecord).filter(
+                    ReportVerificationRecord.report_id.in_(report_ids)
+                ).all()
+                verifications = {
+                    v.report_id: {"rate": v.hallucination_rate, "details": v.details_json}
+                    for v in vrows
+                }
+
             records = [
                 {
                     "report_id": r.report_id,
@@ -378,28 +555,51 @@ def _render_past_reports(db_manager, chat_session_id: Optional[str] = None, drug
                     "report_type": r.report_type,
                     "content_md": r.content_md,
                     "created_at": r.created_at,
+                    "hallucination_rate": verifications.get(r.report_id, {}).get("rate"),
+                    "verification_details": verifications.get(r.report_id, {}).get("details"),
                 }
-                for r in q.all()
+                for r in report_rows
             ]
 
         if not records:
             return
 
+        p = _theme._PALETTES.get(st.session_state.get("theme", "dark"), _theme.DARK)
         label = f"Past Reports — {drug_name}" if drug_name else "Past Reports"
         with st.expander(label, expanded=True):
             for r in records:
                 date_str = r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else "unknown"
+                rate = r["hallucination_rate"]
+                if rate is None:
+                    rate_badge_html = f"<span class='badge' style='background:{p.bg_hover};color:{p.text_muted};border:1px solid {p.border};font-size:0.7rem;padding:2px 8px'>⬜ unverified</span>"
+                elif rate == 0.0:
+                    rate_badge_html = f"<span class='badge badge-success' style='font-size:0.7rem;padding:2px 8px'>✓ 0%</span>"
+                elif rate < 0.3:
+                    rate_badge_html = f"<span class='badge badge-warning' style='font-size:0.7rem;padding:2px 8px'>⚠ {rate:.0%}</span>"
+                else:
+                    rate_badge_html = f"<span class='badge badge-error' style='font-size:0.7rem;padding:2px 8px'>✗ {rate:.0%}</span>"
+
+                safe = r["drug_name"].replace(" ", "_")
+                date_sfx = r["created_at"].strftime("%Y%m%d") if r["created_at"] else "report"
+
                 col_info, col_view, col_md, col_pdf = st.columns([3, 1, 1, 1])
                 with col_info:
-                    st.markdown(f"**{r['drug_name']}** · {REPORT_TYPES.get(r['report_type'], r['report_type'])} · {date_str}")
+                    st.markdown(
+                        f"<div class='report-row'>"
+                        f"<strong style='color:{p.text_primary}'>{r['drug_name']}</strong> "
+                        f"<span style='color:{p.text_muted};font-size:0.8rem'>· {REPORT_TYPES.get(r['report_type'], r['report_type'])} · {date_str}</span> "
+                        f"{rate_badge_html}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
                 with col_view:
                     if st.button("View", key=f"view_{r['report_id']}"):
                         st.session_state.generated_report = r["content_md"]
                         st.session_state.identified_drug = r["drug_name"]
+                        st.session_state["hallucination_rate"] = r["hallucination_rate"]
+                        st.session_state["hallucination_check"] = r["verification_details"]
                         st.rerun()
                 with col_md:
-                    safe = r["drug_name"].replace(" ", "_")
-                    date_sfx = r["created_at"].strftime("%Y%m%d") if r["created_at"] else "report"
                     st.download_button(
                         ".md",
                         data=r["content_md"],
