@@ -92,5 +92,27 @@ ML Concentration Docs/
 # Added by code-review-graph
 .code-review-graph/
 
-#Claude Skills
-.claude/skills/*streamlit*/
+# Claude Code (entire local config directory)
+.claude/
+
+# AI coding tool configs (local-only)
+.cursorrules
+.windsurfrules
+.kiro/
+.mcp.json
+.opencode.json
+.superpowers/
+
+# Temp/one-off files
+4-11LogsUpdated.txt
+my_tree.txt
+MCPFINAL.xlsx - Sheet1.csv
+PR_MESSAGE.md
+AGENTS.md
+GEMINI.md
+
+# Presentation files (not part of codebase)
+finalPres/
+
+# Bootstrap resources (not up to date with current architecture)
+docs/Bootstrap_Resources/
